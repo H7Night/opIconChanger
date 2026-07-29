@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="xposed_scope">
+        <!-- OxygenOS/OPPO 系统桌面 -->
+        <item>com.android.launcher</item>
+    </string-array>
+</resources>

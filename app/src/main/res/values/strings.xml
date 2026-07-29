@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">opIconChanger</string>
+    <string name="search_hint">搜索应用名称或图标名称…</string>
+    <string name="no_results">无匹配结果</string>
+    <string name="loading_icons">正在加载图标…</string>
+
+    <!-- MainActivity -->
+    <string name="title_status">模块状态</string>
+    <string name="title_icon_pack">图标包</string>
+    <string name="title_log">调试日志</string>
+    <string name="title_actions">操作</string>
+    <string name="status_label">状态</string>
+    <string name="status_installed">✅ 已安装 — 桌面长按图标编辑即可测试</string>
+    <string name="target_label">目标</string>
+    <string name="icon_pack_none">未选择</string>
+    <string name="icon_pack_count">%d 个图标</string>
+    <string name="icon_pack_scanning">正在扫描…</string>
+    <string name="icon_pack_select">选择图标包</string>
+    <string name="btn_test_picker">测试图标选择器</string>
+    <string name="btn_restart_launcher">重启桌面</string>
+    <string name="btn_refresh_log">刷新日志</string>
+    <string name="restart_title">确认重启</string>
+    <string name="restart_message">将强制停止系统桌面，桌面会自动重启。\n\n确定继续？</string>
+    <string name="restart_confirm">确定</string>
+    <string name="restart_cancel">取消</string>
+    <string name="log_empty">暂无日志</string>
+    <string name="log_loading">正在加载日志…</string>
+    <string name="log_failed">日志加载失败</string>
+
+    <!-- Bottom Navigation -->
+    <string name="nav_manage">管理</string>
+    <string name="nav_apps">应用</string>
+
+    <!-- App List -->
+    <string name="app_list_search_hint">搜索应用…</string>
+    <string name="app_list_empty">未找到匹配应用</string>
+    <string name="app_list_loading">正在加载应用列表…</string>
+    <string name="app_icon_change">更换图标</string>
+    <string name="app_icon_changed">图标已更换，重启桌面生效</string>
+</resources>
