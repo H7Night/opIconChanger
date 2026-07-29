@@ -28,6 +28,7 @@ import com.opiconchanger.R
 import com.opiconchanger.iconpack.IconPackParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -40,24 +41,22 @@ class MainActivity : AppCompatActivity() {
         private const val DEFAULT_ICON_PACK = "app.lawnchair.lawnicons"
     }
 
-    // === Pages ===
     private lateinit var pageApps: View
     private lateinit var pageLog: View
-
-    // === Apps page ===
     private lateinit var spinnerIconPack: Spinner
     private lateinit var tvIconCount: TextView
     private lateinit var etSearch: EditText
     private lateinit var rvApps: RecyclerView
     private lateinit var tvEmpty: TextView
+    private lateinit var tvLog: TextView
+
     private var allApps: List<AppEntry> = emptyList()
     private var appAdapter: AppAdapter? = null
     private var pendingApp: AppEntry? = null
     private var iconPacks: List<String> = listOf(DEFAULT_ICON_PACK)
     private var iconPackParser: IconPackParser? = null
-
-    // === Log page ===
-    private lateinit var tvLog: TextView
+    
+    private var currentLauncherPackage: String = MainHook.LAUNCHER_PACKAGE
 
     private val iconPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -75,22 +74,18 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Pages
         pageApps = layoutInflater.inflate(R.layout.page_apps, findViewById(R.id.pageContainer), false)
         pageLog = layoutInflater.inflate(R.layout.page_log, findViewById(R.id.pageContainer), false)
         findViewById<ViewGroup>(R.id.pageContainer).apply {
-            addView(pageApps)
-            addView(pageLog)
+            addView(pageApps); addView(pageLog)
             pageLog.visibility = View.GONE
         }
 
-        // Bottom nav
         val tabApps = findViewById<TextView>(R.id.tabApps)
         val tabLog = findViewById<TextView>(R.id.tabLog)
         tabApps.setOnClickListener { showPage(0, tabApps, tabLog) }
         tabLog.setOnClickListener { showPage(1, tabLog, tabApps) }
 
-        // Apps page
         spinnerIconPack = pageApps.findViewById(R.id.spinnerIconPack)
         tvIconCount = pageApps.findViewById(R.id.tvIconCount)
         etSearch = pageApps.findViewById(R.id.etSearch)
@@ -104,13 +99,27 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        // Log page
         tvLog = pageLog.findViewById(R.id.tvLog)
         pageLog.findViewById<Button>(R.id.btnRefreshLog).setOnClickListener { loadLogs() }
 
+        detectLauncher()
         loadIconPacks()
         loadApps()
         loadLogs()
+    }
+
+    private fun detectLauncher() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val launcher = try {
+                val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME) }
+                val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                resolveInfo?.activityInfo?.packageName ?: MainHook.LAUNCHER_PACKAGE
+            } catch (e: Exception) {
+                MainHook.LAUNCHER_PACKAGE
+            }
+            currentLauncherPackage = launcher
+            Log.i(TAG, "Detected launcher: $currentLauncherPackage")
+        }
     }
 
     private fun showPage(idx: Int, active: TextView, inactive: TextView) {
@@ -120,8 +129,6 @@ class MainActivity : AppCompatActivity() {
         inactive.setTextColor(0xFF888888.toInt())
     }
 
-    // ==================== Icon Pack ====================
-
     private fun loadIconPacks() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -129,9 +136,7 @@ class MainActivity : AppCompatActivity() {
                 iconPackParser = parser
                 val found = parser.scanInstalledIconPacks()
                 iconPacks = if (found.isEmpty()) listOf(DEFAULT_ICON_PACK) else found
-                Log.i(TAG, "Icon packs found: $iconPacks")
             } catch (e: Exception) {
-                Log.e(TAG, "scanInstalledIconPacks failed", e)
                 iconPacks = listOf(DEFAULT_ICON_PACK)
             }
             withContext(Dispatchers.Main) {
@@ -143,13 +148,12 @@ class MainActivity : AppCompatActivity() {
                 val idx = iconPacks.indexOf(saved).takeIf { it >= 0 } ?: 0
                 spinnerIconPack.setSelection(idx)
                 spinnerIconPack.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                         prefs.edit().putString("selected_icon_pack", iconPacks[pos]).apply()
                         updateIconCount(iconPacks[pos])
                     }
-                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                    override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
                 }
-                updateIconCount(iconPacks[idx])
             }
         }
     }
@@ -159,22 +163,16 @@ class MainActivity : AppCompatActivity() {
             try {
                 val parser = iconPackParser ?: IconPackParser(applicationContext)
                 val count = parser.loadIconPack(pack).size
-                Log.i(TAG, "Icon pack $pack: $count icons loaded")
                 withContext(Dispatchers.Main) { tvIconCount.text = "$count 个图标" }
-            } catch (e: Exception) {
-                Log.e(TAG, "loadIconPack failed for $pack", e)
-            }
+            } catch (_: Exception) {}
         }
     }
 
     private fun getSelectedIconPack() = spinnerIconPack.selectedItem?.toString() ?: DEFAULT_ICON_PACK
 
-    // ==================== App List ====================
-
     private fun loadApps() {
         CoroutineScope(Dispatchers.IO).launch {
             allApps = queryInstalledApps()
-            Log.i(TAG, "Apps loaded: ${allApps.size}")
             withContext(Dispatchers.Main) {
                 appAdapter = AppAdapter(allApps) { onAppClicked(it) }
                 rvApps.adapter = appAdapter
@@ -186,9 +184,8 @@ class MainActivity : AppCompatActivity() {
     private fun queryInstalledApps(): List<AppEntry> {
         val pm = packageManager
         val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        val flags = PackageManager.MATCH_ALL or PackageManager.GET_ACTIVITIES
         val seen = mutableSetOf<String>()
-        return pm.queryIntentActivities(intent, flags).mapNotNull { ri ->
+        return pm.queryIntentActivities(intent, PackageManager.MATCH_ALL).mapNotNull { ri ->
             val pkg = ri.activityInfo.packageName
             if (!seen.add(pkg)) return@mapNotNull null
             try {
@@ -208,7 +205,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun onAppClicked(app: AppEntry) {
         pendingApp = app
-        Log.i(TAG, "Opening icon picker for ${app.pkg} with pack ${getSelectedIconPack()}")
         iconPickerLauncher.launch(Intent(this, IconPickerActivity::class.java).apply {
             putExtra(IconPickerActivity.EXTRA_PACKAGE_NAME, app.pkg)
             putExtra(IconPickerActivity.EXTRA_COMPONENT, app.component)
@@ -216,46 +212,59 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ==================== Apply Icon ====================
-
     private fun applyIcon(app: AppEntry, drawable: String, pack: String) {
-        Log.i(TAG, "applyIcon: ${app.pkg} -> $drawable (pack=$pack)")
         CoroutineScope(Dispatchers.IO).launch {
             val ok = tryBroadcast(app, drawable, pack)
-            Log.i(TAG, "tryBroadcast result: $ok")
             withContext(Dispatchers.Main) {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(if (ok) "广播已发送" else "广播失败")
-                    .setMessage("${app.label}\n图标: $drawable\n\n${if (ok) "需要重启桌面以生效" else "请检查 root 权限"} ")
-                    .setPositiveButton("重启桌面") { _, _ ->
-                        Log.i(TAG, "User clicked restart launcher")
-                        restartLauncher()
-                    }
-                    .setNegativeButton("稍后", null)
-                    .show()
+                    .setMessage("${app.label}\n图标: $drawable\n\n桌面: $currentLauncherPackage\n\n需要重启桌面以生效")
+                    .setPositiveButton("重启桌面") { _, _ -> restartLauncher() }
+                    .setNegativeButton("稍后", null).show()
             }
         }
     }
 
     private fun tryBroadcast(app: AppEntry, drawable: String, pack: String): Boolean {
-        val cmd = buildString {
-            append("am broadcast -p ${MainHook.LAUNCHER_PACKAGE} ")
-            append("-a com.oplus.uxdesign.action.SAVE_CHOOSE_ICON ")
-            append("--es user_set_name \"$drawable\" ")
-            append("--es use_choose_package \"$pack\" ")
-            append("--es use_choose_item_component \"${app.component}\" ")
-            append("--ei user_modify_type 1 --ei user_reset_type 0 ")
-            append("--es choose_icon_key \"${app.pkg}|${app.component}|$drawable\" ")
-            append("--include-stopped-packages")
-        }
-        Log.i(TAG, "Broadcast cmd: $cmd")
+        val pkg = app.pkg.trim()
+        val comp = app.component.trim()
+        val dr = drawable.trim()
+        val iconPack = pack.trim()
+        
+        // 尝试构建兼容多种版本的 key
+        // 1. 包名|组件名|图标名
+        val key1 = "$pkg|$comp|$dr"
+        // 2. 包名/组件名
+        val key2 = "$pkg/$comp"
+        
+        val baseCmd = "am broadcast -a com.oplus.uxdesign.action.SAVE_CHOOSE_ICON " +
+                "-p $currentLauncherPackage " +
+                "--es user_set_name \"$dr\" " +
+                "--es use_choose_package \"$iconPack\" " +
+                "--es use_choose_item_component \"$comp\" " +
+                "--ei user_modify_type 1 " +
+                "--ei user_reset_type 0 " +
+                "--include-stopped-packages"
+
         return try {
-            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-            val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
-            val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
-            p.waitFor()
-            Log.i(TAG, "Broadcast exit=${p.exitValue()} out=$out err=$err")
-            err.isBlank()
+            // 尝试第一种 Key 格式
+            val cmd1 = "$baseCmd --es choose_icon_key \"$key1\""
+            Log.i(TAG, "Executing variant 1: $cmd1")
+            val p1 = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd1))
+            val out1 = BufferedReader(InputStreamReader(p1.inputStream)).readText()
+            p1.waitFor()
+            
+            // 尝试第二种 Key 格式
+            val cmd2 = "$baseCmd --es choose_icon_key \"$key2\""
+            Log.i(TAG, "Executing variant 2: $cmd2")
+            val p2 = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd2))
+            val out2 = BufferedReader(InputStreamReader(p2.inputStream)).readText()
+            p2.waitFor()
+
+            Log.i(TAG, "Variant 1 result: $out1")
+            Log.i(TAG, "Variant 2 result: $out2")
+            
+            out1.contains("result=0") || out2.contains("result=0")
         } catch (e: Exception) {
             Log.e(TAG, "Broadcast failed", e)
             false
@@ -263,20 +272,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restartLauncher() {
-        Log.i(TAG, "restartLauncher: executing am force-stop...")
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop ${MainHook.LAUNCHER_PACKAGE}"))
-                val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
-                p.waitFor()
-                Log.i(TAG, "restartLauncher: exit=${p.exitValue()} err=$err")
+                // 强制停止桌面
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $currentLauncherPackage")).waitFor()
+                delay(800)
+                // 尝试通过 Launcher Intent 拉起桌面
+                val launchIntent = packageManager.getLaunchIntentForPackage(currentLauncherPackage)
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                }
+                Log.i(TAG, "Launcher $currentLauncherPackage restarted.")
             } catch (e: Exception) {
-                Log.e(TAG, "restartLauncher failed", e)
+                Log.e(TAG, "Restart failed", e)
             }
         }
     }
-
-    // ==================== Log ====================
 
     private fun loadLogs() {
         tvLog.text = "加载中…"
@@ -287,37 +298,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchLogcat(): String? {
-        // try no-root first
-        try {
-            val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-s", "opIconChanger:*", "-t", "200"))
+        return try {
+            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -d -s opIconChanger:* -t 150"))
             val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
             p.waitFor()
-            if (out.isNotBlank()) return "[无 root 模式]\n$out"
-        } catch (_: Exception) {}
-
-        // try root
-        try {
-            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -d -s opIconChanger:* -t 200"))
-            val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
-            val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
-            p.waitFor()
-            return buildString {
-                if (err.isNotBlank()) append("[stderr]\n$err\n\n")
-                if (out.isNotBlank()) append("[root 模式]\n$out") else append("(root 模式无输出)")
-            }
-        } catch (e: Exception) {
-            return "日志读取失败: ${e.message}"
-        }
+            if (out.isNotBlank()) "[Root Log]\n$out" else "(无日志输出)"
+        } catch (e: Exception) { "日志读取失败: ${e.message}" }
     }
-
-    // ==================== Types ====================
 
     data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable)
 
-    inner class AppAdapter(
-        private var items: List<AppEntry>,
-        private val onClick: (AppEntry) -> Unit
-    ) : RecyclerView.Adapter<AppAdapter.VH>() {
+    inner class AppAdapter(private var items: List<AppEntry>, val onClick: (AppEntry) -> Unit) : RecyclerView.Adapter<AppAdapter.VH>() {
         fun submitList(new: List<AppEntry>) { items = new; notifyDataSetChanged() }
         override fun onCreateViewHolder(parent: ViewGroup, vt: Int) = VH(LayoutInflater.from(parent.context).inflate(R.layout.item_app_entry, parent, false))
         override fun onBindViewHolder(h: VH, pos: Int) = h.bind(items[pos])

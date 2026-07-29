@@ -39,11 +39,11 @@ class IconPickerActivity : AppCompatActivity() {
         parser = IconPackParser(applicationContext)
 
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
-        recyclerView.layoutManager = GridLayoutManager(this, 6)
+        // 调整为 7 列以实现更紧凑的排列
+        recyclerView.layoutManager = GridLayoutManager(this, 7)
         adapter = IconAdapter(parser) { entry -> onIconSelected(entry) }
         recyclerView.adapter = adapter
 
-        val tvEmpty = findViewById<android.widget.TextView>(R.id.tvEmpty)
         val searchView = findViewById<SearchView>(R.id.searchView)
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean { performSearch(iconPack, query ?: ""); return true }
