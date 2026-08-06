@@ -130,6 +130,25 @@ class IconPackParser(private val context: Context) {
                 .map { it.toIconEntry(iconPackPackage) }
         }
 
+    /**
+     * 模糊搜索：忽略分隔符（_ - . 空格）做包含匹配，支持多关键词 AND。
+     * 例：输入 "telegram" 可命中 ic_telegram_circle；输入 "tele gram" 命中同时包含两段的名字。
+     */
+    suspend fun searchFuzzy(iconPackPackage: String, query: String): List<IconEntry> =
+        withContext(Dispatchers.IO) {
+            val entries = iconPackCache[iconPackPackage] ?: loadIconPack(iconPackPackage)
+            if (query.isBlank()) return@withContext entries.map { it.toIconEntry(iconPackPackage) }
+            val tokens = query.lowercase().split(Regex("[\\s_\\-.]+")).filter { it.isNotBlank() }
+            entries.filter { e ->
+                val drawable = e.drawableName.lowercase().replace(Regex("[^a-z0-9]"), "")
+                val label = e.appLabel.lowercase()
+                val pkg = e.packageName.lowercase()
+                tokens.all { t ->
+                    drawable.contains(t) || label.contains(t) || pkg.contains(t)
+                }
+            }.map { it.toIconEntry(iconPackPackage) }
+        }
+
     suspend fun getAllDrawableNames(iconPackPackage: String): List<String> =
         withContext(Dispatchers.IO) {
             (iconPackCache[iconPackPackage] ?: loadIconPack(iconPackPackage))

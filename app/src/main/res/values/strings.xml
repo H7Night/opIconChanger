@@ -5,10 +5,24 @@
     <string name="no_results">无匹配结果</string>
     <string name="loading_icons">正在加载图标…</string>
 
+    <!-- IconPicker -->
+    <string name="icon_search_hint">输入图标名称搜索，如 telegram</string>
+    <string name="btn_search">搜索</string>
+    <string name="clear_search">清除</string>
+    <string name="icon_total_count">%1$d 个图标</string>
+    <string name="icon_match_count">匹配 %1$d 个</string>
+
+    <!-- 日志状态栏 -->
+    <string name="log_root_ready">ROOT 就绪</string>
+    <string name="log_root_unavailable">ROOT 不可用</string>
+    <string name="log_line_count">%1$d 行</string>
+    <string name="log_match_lines">匹配 %1$d 行</string>
+    <string name="log_keyword_hint">关键词过滤…</string>
+
     <!-- MainActivity -->
     <string name="title_status">模块状态</string>
     <string name="title_icon_pack">图标包</string>
-    <string name="title_log">调试日志</string>
+    <string name="title_log">日志</string>
     <string name="title_actions">操作</string>
     <string name="status_label">状态</string>
     <string name="status_installed">✅ 已安装 — 桌面长按图标编辑即可测试</string>

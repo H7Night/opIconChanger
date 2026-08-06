@@ -41,17 +41,32 @@ if (-not (Test-Path $apkPath)) {
 
 # --- Install ---
 Write-Host "[2/2] Installing to device..." -ForegroundColor Yellow
-$devices = adb devices 2>$null | Select-String -Pattern "\tdevice$"
+$devices = adb devices 2>$null | Select-String -Pattern "\tdevice(\s|$)"
 if (-not $devices) {
     Write-Host "[FAIL] No device connected!" -ForegroundColor Red
     exit 1
 }
-adb install -r $apkPath
+
+# 先尝试 -r 覆盖安装；若因签名不一致失败（debug → release 签名切换），
+# 自动卸载旧版本后重新安装
+$installOut = (adb install -r $apkPath 2>&1) | Out-String
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[FAIL] Install failed!" -ForegroundColor Red
-    exit $LASTEXITCODE
+    if ($installOut -match "UPDATE_INCOMPATIBLE|signatures do not match") {
+        Write-Host "[WARN] 已安装版本签名不一致，卸载旧版本后重新安装..." -ForegroundColor Yellow
+        adb uninstall com.opiconchanger
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[FAIL] 卸载旧版本失败!" -ForegroundColor Red
+            exit $LASTEXITCODE
+        }
+        $installOut = (adb install $apkPath 2>&1) | Out-String
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAIL] Install failed!`n$installOut" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
 }
 Write-Host "       Installed." -ForegroundColor Green
+Write-Host "       adb output:`n$installOut"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

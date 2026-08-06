@@ -10,20 +10,38 @@ OxygenOS 16 (OPPO/OnePlus) 桌面图标替换工具。通过 LSPosed 模块实�
 
 ```
 opIconChanger/
-├── MainHook.kt              # LSPosed 入口 — Hook Activity.onResume
-├── ui/
-│   ├── MainActivity.kt      # 主界面：图标包选择 + 应用列表 + 日志
-│   └── IconPickerActivity.kt # 图标选择器（可搜索网格）
-├── iconpack/
-│   └── IconPackParser.kt    # Icon Pack 解析引擎
-└── model/
-    ├── IconEntry.kt          # Icon Pack 条目数据模型
-    └── IconRequest.kt        # 跨进程请求协议（JSON 文件）
+├── app/
+│   └── src/main/
+│       ├── java/com/opiconchanger/
+│       │   ├── MainHook.kt                # LSPosed 入口 — Hook Activity.onResume + MorphIconLoader
+│       │   ├── ui/
+│       │   │   ├── MainActivity.kt        # 主界面：应用列表 + 日志 Tab（终端式日志渲染）
+│       │   │   └── IconPickerActivity.kt  # 图标选择器：顶部搜索栏 + 自适应网格 + 底部搜索按钮
+│       │   ├── iconpack/
+│       │   │   └── IconPackParser.kt      # Icon Pack 解析引擎（appfilter.xml + 模糊搜索）
+│       │   ├── model/
+│       │   │   ├── IconEntry.kt           # Icon Pack 条目数据模型
+│       │   │   └── IconRequest.kt         # 跨进程请求协议（JSON 文件）
+│       │   └── utils/
+│       │       ├── LogRenderer.kt         # 终端风格日志渲染（行号 + 级别配色 + 关键词高亮）
+│       │       ├── LogUtils.kt            # 日志工具
+│       │       └── RestartUtils.kt        # 桌面重启工具
+│       └── res/
+│           ├── layout/                    # activity_main / activity_icon_picker / page_apps / page_log / item_*
+│           ├── drawable/                  # bg_icon_cell / bg_terminal_panel / bg_search_bar / bg_dot / bg_tab_indicator
+│           └── values/
+│               ├── colors.xml             # Material3 青墨色系 + 终端面板配色
+│               ├── themes.xml             # Theme.opIconChanger (Material3 Light NoActionBar)
+│               ├── strings.xml
+│               └── arrays.xml             # xposed_scope 双包名
+├── scripts/                               # 构建/安装脚本（见下方）
+├── analyze/                               # 反编译产物（OplusLauncher / Lawnicons 源码）
+└── keystore/debug.jks                     # release 签名
 ```
 
 **数据流**：
 ```
-opIconChanger UI → JSON 文件 → Launcher.onResume Hook
+opIconChanger UI → JSON 请求文件 → Launcher.onResume Hook
   → getResourcesForApplication(iconPackPkg) → getDrawable
   → UxFileUtils.saveEditDrawableToDir() 反射调用
   → /data/oplus/uxicons/choose/<pkg>.{png,cfg}
@@ -122,9 +140,53 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 
 ## 编译/build
 
+### 方式 1：直接 Gradle
+
 ```bash
-./gradlew.bat assembleDebug
-# 输出: app/build/outputs/apk/debug/app-debug.apk
+./gradlew.bat assembleDebug        # debug（无 minify，快）
+./gradlew.bat assembleRelease      # release（用 keystore/debug.jks 签名）
+# 输出: app/build/outputs/apk/debug/app-debug.apk 或 .../release/app-release.apk
+```
+
+### 方式 2：scripts/ 脚本（推荐）
+
+所有脚本自动 `cd` 到项目根，并自动探测 JAVA_HOME（`~/Abandon/Application/scoop/apps/openjdk17`）。
+
+| 脚本 | 平台 | 作用 |
+|------|------|------|
+| `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 release APK |
+| `scripts/buildDebugApk.sh` / `.ps1` | bash / PowerShell | 构建 debug APK（调试用） |
+| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 release 并 `adb install -r` 安装 |
+
+```bash
+bash scripts/buildDebugApk.sh       # 快速构建 debug
+powershell -File scripts/build.ps1  # Windows 下构建 release
+```
+
+### 方式 3：adb 安装 APK
+
+```bash
+# 连接设备（无线调试 / USB 均可）
+adb devices
+
+# 安装（-r 覆盖安装保留数据）
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 或直接安装 release
+adb install -r app/build/outputs/apk/release/app-release.apk
+
+# 卸载
+adb uninstall com.opiconchanger
+```
+
+安装后在 LSPosed 管理器中启用模块，并在作用域勾选桌面（`com.android.launcher` / `com.oppo.launcher`），重启桌面生效。
+
+### 完整验证流程（改代码后必跑）
+
+```bash
+./gradlew.bat assembleDebug                # 编译 + 资源链接
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am force-stop com.android.launcher && adb shell monkey -p com.opiconchanger 1
+# 或点击桌面图标启动，观察 App 日志 Tab
 ```
 
 ## YukiHookAPI 1.3.2 注意事项

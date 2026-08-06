@@ -9,6 +9,8 @@ import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import androidx.core.content.ContextCompat
+import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
 import android.view.LayoutInflater
@@ -21,6 +23,7 @@ import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.button.MaterialButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -51,6 +54,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvApps: RecyclerView
     private lateinit var tvEmpty: TextView
     private lateinit var tvLog: TextView
+    private lateinit var etLogKeyword: EditText
+    private lateinit var tvLineCount: TextView
+    private lateinit var tvMatchCount: TextView
+    private lateinit var rootDot: View
+    private lateinit var tvRootStatus: TextView
+
+    private var lastRawLog: String = ""
+    private var rootAvailable: Boolean = false
 
     private var allApps: List<AppEntry> = emptyList()
     private var appAdapter: AppAdapter? = null
@@ -92,10 +103,10 @@ class MainActivity : AppCompatActivity() {
             pageLog.visibility = View.GONE
         }
 
-        val tabApps = findViewById<TextView>(R.id.tabApps)
-        val tabLog = findViewById<TextView>(R.id.tabLog)
-        tabApps.setOnClickListener { showPage(0, tabApps, tabLog) }
-        tabLog.setOnClickListener { showPage(1, tabLog, tabApps) }
+        val tabApps = findViewById<View>(R.id.tabApps)
+        val tabLog = findViewById<View>(R.id.tabLog)
+        tabApps.setOnClickListener { showPage(0) }
+        tabLog.setOnClickListener { showPage(1) }
 
         spinnerIconPack = pageApps.findViewById(R.id.spinnerIconPack)
         tvIconCount = pageApps.findViewById(R.id.tvIconCount)
@@ -111,9 +122,21 @@ class MainActivity : AppCompatActivity() {
         })
 
         tvLog = pageLog.findViewById(R.id.tvLog)
-        pageLog.findViewById<Button>(R.id.btnRestartLauncher).setOnClickListener { restartLauncher() }
-        pageLog.findViewById<Button>(R.id.btnRefreshLog).setOnClickListener { loadLogs() }
-        pageLog.findViewById<Button>(R.id.btnClearLog).setOnClickListener { clearLogs() }
+        etLogKeyword = pageLog.findViewById(R.id.etLogKeyword)
+        tvLineCount = pageLog.findViewById(R.id.tvLineCount)
+        tvMatchCount = pageLog.findViewById(R.id.tvMatchCount)
+        rootDot = pageLog.findViewById(R.id.rootDot)
+        tvRootStatus = pageLog.findViewById(R.id.tvRootStatus)
+
+        etLogKeyword.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { renderLog() }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        pageLog.findViewById<MaterialButton>(R.id.btnRestartLauncher).setOnClickListener { restartLauncher() }
+        pageLog.findViewById<MaterialButton>(R.id.btnRefreshLog).setOnClickListener { loadLogs() }
+        pageLog.findViewById<MaterialButton>(R.id.btnClearLog).setOnClickListener { clearLogs() }
 
         detectLauncher()
         loadIconPacks()
@@ -143,11 +166,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPage(idx: Int, active: TextView, inactive: TextView) {
+    private fun showPage(idx: Int) {
         pageApps.visibility = if (idx == 0) View.VISIBLE else View.GONE
         pageLog.visibility = if (idx == 1) View.VISIBLE else View.GONE
-        active.setTextColor(0xFF000000.toInt())
-        inactive.setTextColor(0xFF888888.toInt())
+        // 底部 Tab 属于 activity_main，需通过 Activity 根视图查找
+        val activeLabel = findViewById<TextView>(if (idx == 0) R.id.tabAppsLabel else R.id.tabLogLabel)
+        val inactiveLabel = findViewById<TextView>(if (idx == 0) R.id.tabLogLabel else R.id.tabAppsLabel)
+        val activeInd = findViewById<View>(if (idx == 0) R.id.tabAppsIndicator else R.id.tabLogIndicator)
+        val inactiveInd = findViewById<View>(if (idx == 0) R.id.tabLogIndicator else R.id.tabAppsIndicator)
+
+        activeLabel.setTextColor(ContextCompat.getColor(this, R.color.teal_primary))
+        activeLabel.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        inactiveLabel.setTextColor(ContextCompat.getColor(this, R.color.on_surface_variant))
+        inactiveLabel.typeface = android.graphics.Typeface.DEFAULT
+        activeInd.visibility = View.VISIBLE
+        inactiveInd.visibility = View.INVISIBLE
     }
 
     private fun loadIconPacks() {
@@ -297,7 +330,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadLogs() {
-        tvLog.text = "加载中…"
+        tvLog.text = "正在加载日志…"
         CoroutineScope(Dispatchers.IO).launch {
             val sb = StringBuilder()
 
@@ -345,9 +378,37 @@ class MainActivity : AppCompatActivity() {
             sb.appendLine("MainHook 目标包名:  ${MainHook.LAUNCHER_PACKAGE}")
             sb.appendLine("是否匹配:           ${currentLauncherPackage == MainHook.LAUNCHER_PACKAGE}")
 
-            withContext(Dispatchers.Main) { tvLog.text = sb.toString() }
+            rootAvailable = isRootAvailable()
+            withContext(Dispatchers.Main) { showLog(sb.toString()) }
         }
     }
+
+    private fun showLog(raw: String) {
+        lastRawLog = raw
+        renderLog()
+    }
+
+    private fun renderLog() {
+        val keyword = etLogKeyword.text?.toString() ?: ""
+        val (spanned, stats) = LogRenderer.render(lastRawLog, keyword)
+        tvLog.text = spanned
+        tvLineCount.text = getString(R.string.log_line_count, stats.lineCount)
+        tvMatchCount.text = getString(R.string.log_match_lines, stats.matchLines)
+
+        val (dotColor, statusText) = if (rootAvailable)
+            R.color.root_on to getString(R.string.log_root_ready)
+        else
+            R.color.root_off to getString(R.string.log_root_unavailable)
+        rootDot.background.mutate().setTint(ContextCompat.getColor(this, dotColor))
+        tvRootStatus.setTextColor(ContextCompat.getColor(this, if (rootAvailable) R.color.root_on else R.color.terminal_text))
+        tvRootStatus.text = statusText
+    }
+
+    private fun isRootAvailable(): Boolean = try {
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "echo ok"))
+        p.waitFor()
+        p.exitValue() == 0
+    } catch (_: Exception) { false }
 
     private fun restartLauncher() {
         tvLog.text = "正在重启桌面…"

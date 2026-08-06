@@ -5,16 +5,18 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import android.widget.SearchView
+import com.google.android.material.button.MaterialButton
 import com.opiconchanger.R
 import com.opiconchanger.iconpack.IconPackParser
 import com.opiconchanger.model.IconEntry
-import kotlinx.coroutines.delay
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class IconPickerActivity : AppCompatActivity() {
@@ -29,45 +31,69 @@ class IconPickerActivity : AppCompatActivity() {
 
     private lateinit var parser: IconPackParser
     private lateinit var adapter: IconAdapter
-    private var searchJob: kotlinx.coroutines.Job? = null
+    private lateinit var etSearch: EditText
+    private lateinit var btnClearSearch: ImageView
+    private lateinit var tvResultCount: TextView
+    private lateinit var tvEmpty: TextView
+
+    private var iconPack: String = "app.lawnchair.lawnicons"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_icon_picker)
 
-        val iconPack = intent.getStringExtra(EXTRA_ICON_PACK) ?: "app.lawnchair.lawnicons"
+        iconPack = intent.getStringExtra(EXTRA_ICON_PACK) ?: "app.lawnchair.lawnicons"
         parser = IconPackParser(applicationContext)
 
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
-        // 调整为 7 列以实现更紧凑的排列
-        recyclerView.layoutManager = GridLayoutManager(this, 7)
+        recyclerView.layoutManager = GridLayoutManager(this, adaptiveSpanCount())
         adapter = IconAdapter(parser) { entry -> onIconSelected(entry) }
         recyclerView.adapter = adapter
 
-        val searchView = findViewById<SearchView>(R.id.searchView)
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean { performSearch(iconPack, query ?: ""); return true }
-            override fun onQueryTextChange(newText: String?): Boolean {
-                searchJob?.cancel()
-                searchJob = lifecycleScope.launch { delay(300); performSearch(iconPack, newText ?: "") }
-                return true
+        etSearch = findViewById(R.id.etSearch)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
+        tvResultCount = findViewById(R.id.tvResultCount)
+        tvEmpty = findViewById(R.id.tvEmpty)
+        findViewById<MaterialButton>(R.id.btnSearch).setOnClickListener { performSearch() }
+
+        etSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) { performSearch(); true } else false
+        }
+        etSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                btnClearSearch.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
         })
+        btnClearSearch.setOnClickListener { etSearch.text?.clear(); performSearch() }
 
-        loadIcons(iconPack, "")
+        loadIcons("")
     }
 
-    private fun performSearch(pack: String, query: String) { loadIcons(pack, query) }
+    /** 自适应列数：仿 Lawnicons 按屏宽计算，目标单元格约 68dp（手机上约 5 列） */
+    private fun adaptiveSpanCount(): Int {
+        val cellDp = 68f
+        val widthPx = resources.displayMetrics.widthPixels
+        val density = resources.displayMetrics.density
+        return (widthPx / (cellDp * density)).toInt().coerceAtLeast(3)
+    }
 
-    private fun loadIcons(pack: String, query: String) {
-        val tvEmpty = findViewById<android.widget.TextView>(R.id.tvEmpty)
+    private fun performSearch() {
+        loadIcons(etSearch.text?.toString()?.trim() ?: "")
+    }
+
+    private fun loadIcons(query: String) {
+        tvEmpty.visibility = View.VISIBLE
+        tvEmpty.text = getString(R.string.loading_icons)
         lifecycleScope.launch {
-            tvEmpty.visibility = View.VISIBLE
-            tvEmpty.text = getString(R.string.loading_icons)
-            val byApp = parser.searchByApp(pack, query)
-            val byName = parser.searchByDrawableName(pack, query)
-            val merged = (byApp + byName).distinctBy { "${it.iconPackPackage}:${it.drawableName}" }
+            val merged = parser.searchFuzzy(iconPack, query)
             adapter.submitList(merged)
+            tvResultCount.text = if (query.isBlank()) {
+                getString(R.string.icon_total_count, merged.size)
+            } else {
+                getString(R.string.icon_match_count, merged.size)
+            }
             tvEmpty.visibility = if (merged.isEmpty()) View.VISIBLE else View.GONE
             if (merged.isEmpty()) tvEmpty.text = getString(R.string.no_results)
         }
@@ -104,9 +130,10 @@ class IconAdapter(
 
         fun bind(e: IconEntry) {
             iv.setImageResource(android.R.drawable.ic_menu_gallery)
+            iv.setAlpha(0.35f)
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                 val bmp = parser.loadIconBitmap(e.iconPackPackage, e.drawableName)
-                if (bmp != null) iv.setImageBitmap(bmp)
+                if (bmp != null) { iv.setImageBitmap(bmp); iv.setAlpha(1f) }
             }
             iv.setOnClickListener { onItemClick(e) }
         }
