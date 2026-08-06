@@ -74,6 +74,8 @@ class IconPickerActivity : AppCompatActivity() {
     }
 
     private fun onIconSelected(entry: IconEntry) {
+        android.util.Log.i("opIconChanger", "IconPicker: selected ${entry.drawableName}")
+        android.widget.Toast.makeText(this, "已选择: ${entry.drawableName}", android.widget.Toast.LENGTH_SHORT).show()
         setResult(RESULT_OK, Intent().apply {
             putExtra(RESULT_DRAWABLE_NAME, entry.drawableName)
             putExtra(RESULT_ICON_PACK, entry.iconPackPackage)

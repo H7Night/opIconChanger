@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="xposed_scope">
-        <!-- OxygenOS/OPPO 系统桌面 -->
+        <!-- OPPO/OnePlus 系统桌面 — 双包名覆盖 -->
         <item>com.android.launcher</item>
+        <item>com.oppo.launcher</item>
     </string-array>
 </resources>

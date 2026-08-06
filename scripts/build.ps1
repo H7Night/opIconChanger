@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     opIconChanger 一键构建脚本
 .DESCRIPTION
@@ -8,7 +8,8 @@
 #>
 
 $ErrorActionPreference = "Stop"
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# scripts/ 的上一级即项目根（$PSScriptRoot 在部分环境下为空，故用 MyInvocation 定位）
+$projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $projectRoot
 
 Write-Host "========================================" -ForegroundColor Cyan

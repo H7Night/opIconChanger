@@ -5,7 +5,7 @@ echo   opIconChanger - Build Script
 echo ========================================
 echo.
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 echo [1/2] Assembling release APK...
 call .\gradlew.bat assembleRelease

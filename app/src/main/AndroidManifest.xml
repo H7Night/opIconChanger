@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 读取所有已安装应用（Android 11+） -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- 读取所有已安装应用（Android 11+）。
+         刻意使用 QUERY_ALL_PACKAGES：本工具需枚举设备上全部应用供用户挑选替换图标，
+         无法用固定 <queries> 覆盖，故豁免 QueryAllPackagesPermission 检查。 -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <!-- 允许查询启动器应用和图标包 -->
     <queries>

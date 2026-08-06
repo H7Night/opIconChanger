@@ -2,7 +2,8 @@
 # opIconChanger - Build Release APK & Install to device
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# scripts/ 的上一级即项目根
+cd "$SCRIPT_DIR/.."
 
 echo "========================================"
 echo "  opIconChanger - Build & Install"

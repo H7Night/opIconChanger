@@ -1,15 +1,16 @@
 package com.opiconchanger.ui
 
-import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.Log
+import com.opiconchanger.utils.LogUtils
+import com.opiconchanger.utils.RestartUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,6 +20,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -26,18 +28,18 @@ import androidx.recyclerview.widget.RecyclerView
 import com.opiconchanger.MainHook
 import com.opiconchanger.R
 import com.opiconchanger.iconpack.IconPackParser
+import com.opiconchanger.model.IconRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val TAG = "opIconChanger"
         private const val DEFAULT_ICON_PACK = "app.lawnchair.lawnicons"
     }
 
@@ -61,22 +63,31 @@ class MainActivity : AppCompatActivity() {
     private val iconPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode != RESULT_OK) return@registerForActivityResult
-        val data = result.data ?: return@registerForActivityResult
-        val drawable = data.getStringExtra(IconPickerActivity.RESULT_DRAWABLE_NAME) ?: return@registerForActivityResult
+        LogUtils.i("iconPickerLauncher: resultCode=${result.resultCode}")
+        if (result.resultCode != RESULT_OK) {
+            Toast.makeText(this, "取消选择", Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+        val data = result.data
+        if (data == null) { Toast.makeText(this, "data为空", Toast.LENGTH_SHORT).show(); return@registerForActivityResult }
+        val drawable = data.getStringExtra(IconPickerActivity.RESULT_DRAWABLE_NAME)
         val pack = data.getStringExtra(IconPickerActivity.RESULT_ICON_PACK) ?: getSelectedIconPack()
-        val app = pendingApp ?: return@registerForActivityResult
+        val app = pendingApp
+        if (drawable == null) { Toast.makeText(this, "drawable为空", Toast.LENGTH_SHORT).show(); return@registerForActivityResult }
+        if (app == null) { Toast.makeText(this, "app为空", Toast.LENGTH_SHORT).show(); return@registerForActivityResult }
         pendingApp = null
-        applyIcon(app, drawable, pack)
+        Toast.makeText(this, "正在应用: $drawable", Toast.LENGTH_SHORT).show()
+        applyIconNew(app, drawable, pack)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        pageApps = layoutInflater.inflate(R.layout.page_apps, findViewById(R.id.pageContainer), false)
-        pageLog = layoutInflater.inflate(R.layout.page_log, findViewById(R.id.pageContainer), false)
-        findViewById<ViewGroup>(R.id.pageContainer).apply {
+        val container = findViewById<ViewGroup>(R.id.pageContainer)
+        pageApps = layoutInflater.inflate(R.layout.page_apps, container, false)
+        pageLog = layoutInflater.inflate(R.layout.page_log, container, false)
+        container.apply {
             addView(pageApps); addView(pageLog)
             pageLog.visibility = View.GONE
         }
@@ -100,7 +111,9 @@ class MainActivity : AppCompatActivity() {
         })
 
         tvLog = pageLog.findViewById(R.id.tvLog)
+        pageLog.findViewById<Button>(R.id.btnRestartLauncher).setOnClickListener { restartLauncher() }
         pageLog.findViewById<Button>(R.id.btnRefreshLog).setOnClickListener { loadLogs() }
+        pageLog.findViewById<Button>(R.id.btnClearLog).setOnClickListener { clearLogs() }
 
         detectLauncher()
         loadIconPacks()
@@ -118,7 +131,15 @@ class MainActivity : AppCompatActivity() {
                 MainHook.LAUNCHER_PACKAGE
             }
             currentLauncherPackage = launcher
-            Log.i(TAG, "Detected launcher: $currentLauncherPackage")
+            val expected = MainHook.LAUNCHER_PACKAGE
+            val match = launcher == expected
+            LogUtils.i("══════ 桌面检测 ══════")
+            LogUtils.i("  检测到桌面包名: $launcher")
+            LogUtils.i("  预期桌面包名:   $expected")
+            LogUtils.i("  是否匹配:       $match")
+            if (!match) {
+                LogUtils.w("  ⚠️ 包名不匹配！请在 LSPosed 管理器中手动勾选 '$launcher'")
+            }
         }
     }
 
@@ -212,79 +233,65 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun applyIcon(app: AppEntry, drawable: String, pack: String) {
+    // ═══════════════════════════════════════════
+    //  写入请求文件，由 MainHook 在 Launcher 进程中处理
+    // ═══════════════════════════════════════════
+    private fun applyIconNew(app: AppEntry, drawable: String, pack: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("icon", drawable))
+
         CoroutineScope(Dispatchers.IO).launch {
-            val ok = tryBroadcast(app, drawable, pack)
-            withContext(Dispatchers.Main) {
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle(if (ok) "广播已发送" else "广播失败")
-                    .setMessage("${app.label}\n图标: $drawable\n\n桌面: $currentLauncherPackage\n\n需要重启桌面以生效")
-                    .setPositiveButton("重启桌面") { _, _ -> restartLauncher() }
-                    .setNegativeButton("稍后", null).show()
-            }
-        }
-    }
+            val request = IconRequest(app.pkg, pack, drawable)
+            val json = request.toJson()
 
-    private fun tryBroadcast(app: AppEntry, drawable: String, pack: String): Boolean {
-        val pkg = app.pkg.trim()
-        val comp = app.component.trim()
-        val dr = drawable.trim()
-        val iconPack = pack.trim()
-        
-        // 尝试构建兼容多种版本的 key
-        // 1. 包名|组件名|图标名
-        val key1 = "$pkg|$comp|$dr"
-        // 2. 包名/组件名
-        val key2 = "$pkg/$comp"
-        
-        val baseCmd = "am broadcast -a com.oplus.uxdesign.action.SAVE_CHOOSE_ICON " +
-                "-p $currentLauncherPackage " +
-                "--es user_set_name \"$dr\" " +
-                "--es use_choose_package \"$iconPack\" " +
-                "--es use_choose_item_component \"$comp\" " +
-                "--ei user_modify_type 1 " +
-                "--ei user_reset_type 0 " +
-                "--include-stopped-packages"
+            LogUtils.i("═══ 写入请求: ${app.label} → $drawable ═══")
 
-        return try {
-            // 尝试第一种 Key 格式
-            val cmd1 = "$baseCmd --es choose_icon_key \"$key1\""
-            Log.i(TAG, "Executing variant 1: $cmd1")
-            val p1 = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd1))
-            val out1 = BufferedReader(InputStreamReader(p1.inputStream)).readText()
-            p1.waitFor()
-            
-            // 尝试第二种 Key 格式
-            val cmd2 = "$baseCmd --es choose_icon_key \"$key2\""
-            Log.i(TAG, "Executing variant 2: $cmd2")
-            val p2 = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd2))
-            val out2 = BufferedReader(InputStreamReader(p2.inputStream)).readText()
-            p2.waitFor()
+            var success = false
 
-            Log.i(TAG, "Variant 1 result: $out1")
-            Log.i(TAG, "Variant 2 result: $out2")
-            
-            out1.contains("result=0") || out2.contains("result=0")
-        } catch (e: Exception) {
-            Log.e(TAG, "Broadcast failed", e)
-            false
-        }
-    }
-
-    private fun restartLauncher() {
-        CoroutineScope(Dispatchers.IO).launch {
+            // 路径 1: filesDir + world-readable（Launcher 作为系统应用可读）
+            val localFile = File(filesDir, "opicon_request.json")
             try {
-                // 强制停止桌面
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $currentLauncherPackage")).waitFor()
-                delay(800)
-                // 尝试通过 Launcher Intent 拉起桌面
-                val launchIntent = packageManager.getLaunchIntentForPackage(currentLauncherPackage)
-                if (launchIntent != null) {
-                    startActivity(launchIntent)
-                }
-                Log.i(TAG, "Launcher $currentLauncherPackage restarted.")
+                localFile.writeText(json)
+                localFile.setReadable(true, false)
+                localFile.setWritable(true, false)
+                Runtime.getRuntime().exec(arrayOf("chmod", "666", localFile.absolutePath)).waitFor()
+                LogUtils.i("  filesDir 写入成功: ${localFile.absolutePath} (${json.length}B)")
+                success = true
             } catch (e: Exception) {
-                Log.e(TAG, "Restart failed", e)
+                LogUtils.w("  filesDir 失败: ${e.message}")
+            }
+
+            // 路径 2: 用 su 写到 /data/local/tmp/（如果可用）
+            try {
+                val tmpPath = "/data/local/tmp/opicon_request.json"
+                // 先写临时文件，再用 su cp
+                val tmpFile = File(filesDir, "opicon_req_tmp.json")
+                tmpFile.writeText(json)
+                tmpFile.setReadable(true, false)
+                val p = Runtime.getRuntime().exec(arrayOf(
+                    "su", "-c", "cp ${tmpFile.absolutePath} $tmpPath && chmod 666 $tmpPath"
+                ))
+                p.waitFor()
+                if (p.exitValue() == 0) {
+                    LogUtils.i("  su → /data/local/tmp/ 成功")
+                    success = true
+                } else {
+                    LogUtils.w("  su cp 失败 exit=${p.exitValue()}")
+                }
+                tmpFile.delete()
+            } catch (e: Exception) {
+                LogUtils.w("  su 路径不可用: ${e.message}")
+            }
+
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    Toast.makeText(this@MainActivity,
+                        "${app.label}\n图标: $drawable\n\n请返回桌面以应用图标",
+                        Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity,
+                        "写入失败\n请检查日志 Tab", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -292,18 +299,102 @@ class MainActivity : AppCompatActivity() {
     private fun loadLogs() {
         tvLog.text = "加载中…"
         CoroutineScope(Dispatchers.IO).launch {
-            val text = fetchLogcat()
-            withContext(Dispatchers.Main) { tvLog.text = text ?: "(无日志)" }
+            val sb = StringBuilder()
+
+            // 1. App 自身日志 (filesDir)
+            val appDiag = java.io.File(filesDir, "opicon_diag.txt")
+            sb.appendLine("═══ App 诊断 (filesDir) ═══")
+            sb.appendLine("存在: ${appDiag.exists()}")
+
+            // 2. Launcher 进程诊断 (/data/oplus/uxicons/choose/)
+            val hookDiag = java.io.File("/data/oplus/uxicons/choose/opicon_hook_diag.txt")
+            sb.appendLine()
+            sb.appendLine("═══ Launcher 诊断 ═══")
+            sb.appendLine("路径: ${hookDiag.absolutePath}")
+            sb.appendLine("存在: ${hookDiag.exists()}")
+            if (hookDiag.exists()) {
+                sb.appendLine("大小: ${hookDiag.length()}B")
+                sb.appendLine("── 内容 ──")
+                // 跨进程目录无直接读取权限，走 su
+                val diagContent = runCatching { hookDiag.readText() }
+                    .getOrElse {
+                        runCatching {
+                            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat ${hookDiag.absolutePath}"))
+                            val out = java.io.BufferedReader(java.io.InputStreamReader(p.inputStream)).readText()
+                            p.waitFor()
+                            out.ifBlank { "(空文件)" }
+                        }.getOrDefault("(无权限读取)")
+                    }
+                sb.appendLine(diagContent.takeLast(8000))
+            } else {
+                sb.appendLine("⚠️ Launcher 诊断文件不存在")
+                sb.appendLine("   → Launcher 进程的 onResume Hook 未触发")
+                sb.appendLine("   → 或 /data/oplus/uxicons/choose/ 不可写")
+            }
+
+            // 2. Logcat (作为补充)
+            sb.appendLine()
+            sb.appendLine("═══ Logcat ═══")
+            val logcat = fetchLogcat()
+            sb.appendLine(logcat)
+
+            // 3. 当前检测到的桌面信息
+            sb.appendLine()
+            sb.appendLine("═══ 桌面检测 ═══")
+            sb.appendLine("当前识别桌面包名: $currentLauncherPackage")
+            sb.appendLine("MainHook 目标包名:  ${MainHook.LAUNCHER_PACKAGE}")
+            sb.appendLine("是否匹配:           ${currentLauncherPackage == MainHook.LAUNCHER_PACKAGE}")
+
+            withContext(Dispatchers.Main) { tvLog.text = sb.toString() }
         }
     }
 
-    private fun fetchLogcat(): String? {
-        return try {
-            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "logcat -d -s opIconChanger:* -t 150"))
-            val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
-            p.waitFor()
-            if (out.isNotBlank()) "[Root Log]\n$out" else "(无日志输出)"
-        } catch (e: Exception) { "日志读取失败: ${e.message}" }
+    private fun restartLauncher() {
+        tvLog.text = "正在重启桌面…"
+        CoroutineScope(Dispatchers.IO).launch {
+            RestartUtils.restartLauncher(this@MainActivity)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "桌面已重启", Toast.LENGTH_SHORT).show()
+                loadLogs()
+            }
+        }
+    }
+
+    private fun clearLogs() {
+        tvLog.text = "正在清空…"
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "rm /data/oplus/uxicons/choose/opicon_hook_diag.txt")).waitFor()
+            } catch (_: Exception) {}
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "日志已清空", Toast.LENGTH_SHORT).show()
+                loadLogs()
+            }
+        }
+    }
+
+    private fun fetchLogcat(): String {
+        // 尝试多种方式读取 logcat
+        val commands = listOf(
+            arrayOf("logcat", "-d", "-s", "opIconChanger:*", "-t", "100"),   // 无需 root
+            arrayOf("su", "-c", "logcat -d -s opIconChanger:* -t 100")       // 需要 root
+        )
+        for (cmd in commands) {
+            try {
+                val p = Runtime.getRuntime().exec(cmd)
+                val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
+                val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
+                p.waitFor()
+                val exitOk = p.exitValue() == 0
+                if (out.isNotBlank()) {
+                    val label = if (cmd[0] == "su") "[Root]" else "[直接]"
+                    return "$label (exit=${p.exitValue()}):\n$out"
+                }
+                if (exitOk && err.isBlank()) return "(logcat 无匹配日志)"
+                // 继续尝试下一个命令
+            } catch (_: Exception) {}
+        }
+        return "(logcat 读取失败 — 所有方式均不可用)"
     }
 
     data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable)

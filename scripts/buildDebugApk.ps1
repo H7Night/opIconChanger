@@ -1,11 +1,12 @@
-<#
+﻿<#
 .SYNOPSIS
     opIconChanger - Build Debug APK
 .DESCRIPTION
     构建 debug 版本 APK（无签名，速度更快，适合开发调试）
 #>
 $ErrorActionPreference = "Stop"
-$projectRoot = $PSScriptRoot
+# scripts/ 的上一级即项目根（$PSScriptRoot 在部分环境下为空，故用 MyInvocation 定位）
+$projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $projectRoot
 
 Write-Host "========================================" -ForegroundColor Cyan

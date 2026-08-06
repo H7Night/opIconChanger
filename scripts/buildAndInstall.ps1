@@ -1,11 +1,12 @@
-<#
+﻿<#
 .SYNOPSIS
     opIconChanger - Build Release APK & Install to device
 .DESCRIPTION
     clean → assembleRelease → verify → adb install
 #>
 $ErrorActionPreference = "Stop"
-$projectRoot = $PSScriptRoot
+# scripts/ 的上一级即项目根
+$projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $projectRoot
 
 Write-Host "========================================" -ForegroundColor Cyan

@@ -87,4 +87,9 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // KavaRef (reflection API, 替代 YukiHookAPI 废弃的反射方法)
+    implementation("com.highcapable.kavaref:kavaref-core:1.1.0")
+    implementation("com.highcapable.kavaref:kavaref-android:1.1.0")
+    implementation("com.highcapable.kavaref:kavaref-extension:1.1.0")
 }
