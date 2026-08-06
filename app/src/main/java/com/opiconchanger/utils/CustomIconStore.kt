@@ -10,13 +10,15 @@ object CustomIconStore {
     /** 已手动更换图标的包名集合（该目录下存在 <pkg>.cfg）。 */
     suspend fun customizedPackageSet(): Set<String> = withContext(Dispatchers.IO) {
         val files = runCatching { File(UX_ICON_DIR).listFiles() }.getOrNull()
-        if (files != null) {
+        val result = if (files != null) {
             files.filter { it.isFile && it.name.endsWith(".cfg") }
                 .map { it.name.removeSuffix(".cfg") }
                 .toSet()
         } else {
             suListCfgPackages()
         }
+        LogUtils.d("customizedPackageSet: ${result.size} packages (direct=${files != null})")
+        result
     }
 
     private fun suListCfgPackages(): Set<String> = try {

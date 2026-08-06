@@ -170,6 +170,11 @@ class MainActivity : AppCompatActivity() {
         loadLogs()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
+    }
+
     private fun detectLauncher() {
         CoroutineScope(Dispatchers.IO).launch {
             val launcher = try {
@@ -243,7 +248,7 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val parser = iconPackParser ?: IconPackParser(applicationContext)
-                val count = parser.loadIconPack(pack).size
+                val count = parser.loadIconPack(pack).map { it.drawableName }.distinct().size
                 withContext(Dispatchers.Main) { tvIconCount.text = "$count 个图标" }
             } catch (_: Exception) {}
         }
@@ -308,10 +313,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun reloadCustomizedSet() {
+    private fun reloadCustomizedSet(retries: Int = 0) {
         CoroutineScope(Dispatchers.IO).launch {
             customizedSet = CustomIconStore.customizedPackageSet()
             withContext(Dispatchers.Main) { filterApps(etSearch.text?.toString() ?: "") }
+        }
+        if (retries > 0) {
+            CoroutineScope(Dispatchers.Default).launch {
+                kotlinx.coroutines.delay(800)
+                reloadCustomizedSet(retries - 1)
+            }
         }
     }
 
@@ -383,7 +394,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity,
                         "写入失败\n请检查日志 Tab", Toast.LENGTH_LONG).show()
                 }
-                if (success && appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
+                if (success && appFilter == AppFilter.UNADAPTED) reloadCustomizedSet(retries = 3)
             }
         }
     }
