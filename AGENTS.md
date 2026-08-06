@@ -16,7 +16,7 @@ opIconChanger/
 │       │   ├── MainHook.kt                # LSPosed 入口 — Hook Activity.onResume + MorphIconLoader
 │       │   ├── ui/
 │       │   │   ├── MainActivity.kt        # 主界面：应用列表 + 日志 Tab（终端式日志渲染）
-│       │   │   └── IconPickerActivity.kt  # 图标选择器：顶部搜索栏 + 自适应网格 + 底部搜索按钮
+│       │   │   └── IconPickerActivity.kt  # 图标选择器：顶部搜索栏 + 搜索按钮 + 自适应网格
 │       │   ├── iconpack/
 │       │   │   └── IconPackParser.kt      # Icon Pack 解析引擎（appfilter.xml + 模糊搜索）
 │       │   ├── model/
@@ -47,6 +47,12 @@ opIconChanger UI → JSON 请求文件 → Launcher.onResume Hook
   → /data/oplus/uxicons/choose/<pkg>.{png,cfg}
   → EditedIconLoaderFactory 自动加载 → 桌面渲染
 ```
+
+**Hook 机制**（已在实机验证通过）：
+- Hook `android.app.Activity.onResume`（Launcher 进程内触发），轮询读取请求 JSON 文件，有请求则处理
+- Hook `MorphIconLoader.loadMorphUxIcon`，绕过系统 1×1 图标限制（`result == null` 时按 .cfg 兜底加载）
+- 刷新：优先反射触发 `onBroadcastIntent`，失败则发送 `ICON_UPDATED` 广播兜底（Launcher 进程内发送可过签名权限）
+- `encase { loadApp() }` 不可靠，直接使用 Xposed 原生 API 挂 `Activity.onResume`
 
 ## 反编译分析
 
@@ -96,38 +102,7 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 ### Launcher 类路径
 
 - 桌面主 Activity: `com.android.launcher.Launcher` (extends `com.android.launcher3.BaseQuickstepLauncher`)
-- 桌面包名: `com.android.launcher` (xposed_scope 中使用)
-
-## 尝试过的方案
-
-### ❌ 方案 1：am startservice LaunchIconService
-- 通过 `su -c am startservice com.oplus.uxdesign/.icon.service.LaunchIconService` 触发图标下载
-- **失败原因**：LaunchIconService 只接收 `PACKAGES` + `icon_theme`，不接收具体 drawableName。下载的是默认图标，不是用户选择的图标。
-
-### ❌ 方案 2：发送 SAVE_CHOOSE_ICON 广播
-- 发送 `com.oplus.uxdesign.action.SAVE_CHOOSE_ICON` 广播
-- **失败原因**：BroadcastReceiver 是动态注册的（仅在 AppEditActivity 打开时），外部无法触发。
-
-### ❌ 方案 3：am start AppEditActivity + 手动粘贴
-- 唤起系统编辑界面，用户手动粘贴图标名搜索
-- **失败原因**：仍需手动操作，且 AppEditActivity 启动不稳定。
-
-### ❌ 方案 4：LSPosed + YukiHookAPI encase/loadApp
-- 使用 `encase { loadApp(LAUNCHER_PACKAGE) { "com.android.launcher.Launcher".hook { ... } } }`
-- **失败原因**：`encase { loadApp() }` 在 `IYukiHookXposedInit` 模式中 PackageParam 上下文未正确传递，Hook 未注册。
-
-### ⚠️ 方案 5（当前）：LSPosed + Xposed 原生 API Hook Activity.onResume
-- 直接 `XposedHelpers.findAndHookMethod(Activity::class.java, "onResume", ...)` 
-- 在回调中用 `activity.packageName == "com.android.launcher"` 过滤
-- 然后反射调用 `UxFileUtils.saveEditDrawableToDir()`
-- **当前状态**：编译通过，但实机测试 Hook 未触发，日志无输出
-- **可能原因**：LSPosed 模块未激活到正确的 Launcher 包名作用域
-
-### ⚠️ 待验证：桌面包名不匹配
-- AndroidManifest 中 `xposed_scope` 配置为 `com.android.launcher`
-- OPPO 设备桌面可能使用 `com.oplus.launcher` 等不同包名
-- `detectLauncher()` 已实现运行时检测包名，但 xposed_scope 需要编译时确定
-- **解决方案**：在 LSPosed 管理器中手动勾选正确的桌面包名
+- 桌面包名（xposed_scope 双包名）: `com.android.launcher` / `com.oppo.launcher`
 
 ## 外部可调用接口（反编译分析）
 
@@ -135,8 +110,9 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 |------|--------|------|
 | `OplusFavoritesProvider.call()` | ✅ 读 ❌ 写 | insert/update/delete 返回 null/0 |
 | `content://com.android.launcher.settings/desktopappedit` | ❌ | 需 `WRITE_SETTINGS` (signature) |
-| `SAVE_CHOOSE_ICON` 广播 | ❌ | 动态注册 receiver |
-| `UxFileUtils.saveEditDrawableToDir()` | ✅ (Launcher 进程内) | public static，纯文件系统 |
+| `SAVE_CHOOSE_ICON` 广播 | ❌ | 动态注册 receiver，外部无法触发 |
+| `am startservice LaunchIconService` | ❌ | 只接收 `PACKAGES` + `icon_theme`，不接收具体 drawableName |
+| `UxFileUtils.saveEditDrawableToDir()` | ✅ (Launcher 进程内) | public static，纯文件系统，当前方案 |
 
 ## 编译/build
 
@@ -156,7 +132,7 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 |------|------|------|
 | `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 release APK |
 | `scripts/buildDebugApk.sh` / `.ps1` | bash / PowerShell | 构建 debug APK（调试用） |
-| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 release 并 `adb install -r` 安装 |
+| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 release 并 `adb install -r` 安装；签名不一致时自动卸载旧版重装 |
 
 ```bash
 bash scripts/buildDebugApk.sh       # 快速构建 debug
@@ -183,8 +159,11 @@ adb uninstall com.opiconchanger
 ### 完整验证流程（改代码后必跑）
 
 ```bash
-./gradlew.bat assembleDebug                # 编译 + 资源链接
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+powershell -File scripts/buildAndInstall.ps1   # 构建 release + 自动处理签名冲突后安装
+# 或快速迭代：
+./gradlew.bat assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk   # 注意：debug 与 release 签名不同，
+                                                            # 切签名需先卸载旧版本
 adb shell am force-stop com.android.launcher && adb shell monkey -p com.opiconchanger 1
 # 或点击桌面图标启动，观察 App 日志 Tab
 ```
@@ -202,4 +181,5 @@ adb shell am force-stop com.android.launcher && adb shell monkey -p com.opiconch
 
 ## 日志
 
-所有日志 tag = `opIconChanger`。App 内日志 Tab 通过 `su -c logcat -d -s opIconChanger:*` 读取。
+- 所有日志 tag = `opIconChanger`，`adb logcat -d -s opIconChanger:*`
+- App 内「日志」Tab 展示终端风格日志：Launcher 进程诊断文件在 `/data/oplus/uxicons/choose/opicon_hook_diag.txt`（跨进程需 `su -c cat` 读取）

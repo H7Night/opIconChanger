@@ -18,9 +18,10 @@ Thumbs.db
 
 # AI
 .antigravitycli/
+reasonix.toml
 
 # Keystore (keep debug, exclude real ones)
 # keystore/
 
 # Decompiled
-analyze/launcher_decompiled/
+analyze/
