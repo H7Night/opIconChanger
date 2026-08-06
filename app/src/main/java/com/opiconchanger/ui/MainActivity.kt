@@ -4,12 +4,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import androidx.core.content.ContextCompat
+import com.opiconchanger.utils.AppFilter
+import com.opiconchanger.utils.AppFilterPredicates
+import com.opiconchanger.utils.CustomIconStore
+import com.opiconchanger.utils.FilterableApp
 import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
@@ -70,6 +75,10 @@ class MainActivity : AppCompatActivity() {
     private var iconPackParser: IconPackParser? = null
     
     private var currentLauncherPackage: String = MainHook.LAUNCHER_PACKAGE
+    private var appFilter: AppFilter = AppFilter.ALL
+    private var adaptedSet: Set<String> = emptySet()
+    private var customizedSet: Set<String> = emptySet()
+    private lateinit var spinnerAppFilter: Spinner
 
     private val iconPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -114,6 +123,23 @@ class MainActivity : AppCompatActivity() {
         rvApps = pageApps.findViewById(R.id.recyclerView)
         tvEmpty = pageApps.findViewById(R.id.tvEmpty)
         rvApps.layoutManager = LinearLayoutManager(this)
+
+        spinnerAppFilter = pageApps.findViewById(R.id.spinnerAppFilter)
+        val filterAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            resources.getStringArray(R.array.app_filter_options)
+        )
+        filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerAppFilter.adapter = filterAdapter
+        spinnerAppFilter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                appFilter = AppFilter.entries.getOrElse(pos) { AppFilter.ALL }
+                if (appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
+                else filterApps(etSearch.text?.toString() ?: "")
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
 
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { filterApps(s?.toString() ?: "") }
@@ -205,6 +231,7 @@ class MainActivity : AppCompatActivity() {
                     override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                         prefs.edit().putString("selected_icon_pack", iconPacks[pos]).apply()
                         updateIconCount(iconPacks[pos])
+                        reloadAdaptedSet(iconPacks[pos])
                     }
                     override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
                 }
@@ -244,17 +271,48 @@ class MainActivity : AppCompatActivity() {
             if (!seen.add(pkg)) return@mapNotNull null
             try {
                 val ai = pm.getApplicationInfo(pkg, 0)
-                AppEntry(pkg, pm.getApplicationLabel(ai).toString(), ri.activityInfo.name, pm.getApplicationIcon(ai))
+                val isSystem = ai.flags and
+                    (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                AppEntry(pkg, pm.getApplicationLabel(ai).toString(), ri.activityInfo.name, pm.getApplicationIcon(ai), isSystem)
             } catch (_: Exception) { null }
         }
     }
 
     private fun filterApps(query: String) {
-        val filtered = if (query.isBlank()) allApps
-        else allApps.filter { it.label.contains(query, true) || it.pkg.contains(query, true) }
+        val filtered = allApps.filter {
+            AppFilterPredicates.matches(
+                FilterableApp(it.pkg, it.isSystem),
+                appFilter,
+                adaptedSet,
+                customizedSet
+            )
+        }.let { list ->
+            if (query.isBlank()) list
+            else list.filter { it.label.contains(query, true) || it.pkg.contains(query, true) }
+        }
         appAdapter?.submitList(filtered)
         tvEmpty.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
         rvApps.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
+        if (filtered.isEmpty()) {
+            tvEmpty.text = if (appFilter == AppFilter.UNADAPTED)
+                getString(R.string.app_list_all_adapted)
+            else getString(R.string.app_list_empty)
+        }
+    }
+
+    private fun reloadAdaptedSet(pack: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val parser = iconPackParser ?: IconPackParser(applicationContext)
+            adaptedSet = parser.adaptedPackageSet(pack)
+            withContext(Dispatchers.Main) { filterApps(etSearch.text?.toString() ?: "") }
+        }
+    }
+
+    private fun reloadCustomizedSet() {
+        CoroutineScope(Dispatchers.IO).launch {
+            customizedSet = CustomIconStore.customizedPackageSet()
+            withContext(Dispatchers.Main) { filterApps(etSearch.text?.toString() ?: "") }
+        }
     }
 
     private fun onAppClicked(app: AppEntry) {
@@ -325,6 +383,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity,
                         "写入失败\n请检查日志 Tab", Toast.LENGTH_LONG).show()
                 }
+                if (success && appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
             }
         }
     }
@@ -458,7 +517,7 @@ class MainActivity : AppCompatActivity() {
         return "(logcat 读取失败 — 所有方式均不可用)"
     }
 
-    data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable)
+    data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable, val isSystem: Boolean)
 
     inner class AppAdapter(private var items: List<AppEntry>, val onClick: (AppEntry) -> Unit) : RecyclerView.Adapter<AppAdapter.VH>() {
         fun submitList(new: List<AppEntry>) { items = new; notifyDataSetChanged() }
