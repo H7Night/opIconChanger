@@ -1,5 +1,7 @@
 # opIconChanger
 
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 为 OxygenOS 16（OPPO / OnePlus）系统桌面提供**可搜索的图标替换工具**，基于 LSPosed 模块实现。
 
 系统内置的图标编辑界面没有搜索功能，从 2 万+ 图标中翻找太痛苦。本模块直接用 LSPosed 注入桌面进程，在 Launcher 进程内反射调用系统自身的图标保存逻辑，实现「搜索 → 挑选 → 立即生效」的完整闭环。
