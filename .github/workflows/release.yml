@@ -24,6 +24,11 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Install Android SDK platform
+        run: |
+          sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-37" >/dev/null
+
       - name: Validate release secrets present
         run: |
           if [ -z "${{ secrets.RELEASE_KEYSTORE_B64 }}" ] || [ -z "${{ secrets.RELEASE_KEYSTORE_PASS }}" ]; then
