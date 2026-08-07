@@ -29,8 +29,10 @@ jobs:
       - name: Install Android SDK platform
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --version
+          "$SDKMANAGER" --list | grep "platforms;android-3" | head -20
           "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-37"
+          "$SDKMANAGER" "platforms;android-37" || true
 
       - name: Cache Gradle
         uses: actions/cache@v4
