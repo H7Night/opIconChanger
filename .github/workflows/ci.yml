@@ -72,7 +72,15 @@ jobs:
           RELEASE_KEYSTORE_FILE: ${{ github.workspace }}/keystore/release.jks
           RELEASE_KEYSTORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASS }}
           RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          echo "=== all source.properties mentioning android-37 ==="
+          find "$ANDROID_HOME" -name source.properties 2>/dev/null | while read f; do
+            if grep -qi "android-37" "$f"; then echo "FILE: $f"; cat "$f"; fi
+          done
+          echo "=== ls -la platforms ==="
+          ls -la "$ANDROID_HOME/platforms" | grep android-37
+          echo "=== run assembleRelease --info ==="
+          ./gradlew assembleRelease --no-daemon --info 2>&1 | grep -iE "android-37|inconsistent|platform sdk|Android SDK Platform" | head -40
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
