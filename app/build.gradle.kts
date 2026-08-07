@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp") version "2.1.20-1.0.31"
+    id("com.google.devtools.ksp") version "2.2.10-2.0.2"
 }
 
 // release 签名密钥不落库：
@@ -61,24 +60,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
-    }
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    compilerOptions {
-        freeCompilerArgs.add("-Xskip-metadata-version-check")
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            freeCompilerArgs.add("-Xskip-metadata-version-check")
+        }
     }
 }
 
 configurations.all {
     resolutionStrategy {
-        force("org.jetbrains.kotlin:kotlin-stdlib:2.1.20")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.20")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.20")
-        force("org.jetbrains.kotlin:kotlin-reflect:2.1.20")
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.10")
+        force("org.jetbrains.kotlin:kotlin-reflect:2.2.10")
         force("androidx.core:core:1.13.1")
         force("androidx.core:core-ktx:1.13.1")
     }
