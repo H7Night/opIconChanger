@@ -20,8 +20,10 @@ Thumbs.db
 .antigravitycli/
 reasonix.toml
 
-# Keystore (keep debug, exclude real ones)
-# keystore/
+# Keystore (exclude all — release key stays local / in CI Secrets)
+keystore/
+keystore/*.jks
+keystore/*.base64
 
 # Decompiled
 analyze/

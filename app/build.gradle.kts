@@ -4,6 +4,14 @@ plugins {
     id("com.google.devtools.ksp") version "2.1.20-1.0.31"
 }
 
+// release 签名密钥不落库：
+// - 本地只构建 debug（AGP 默认使用 ~/.android/debug.keystore，开发者自行签名）
+// - CI（GitHub Actions）先解码 Secrets 到文件，再注入 RELEASE_KEYSTORE_FILE / RELEASE_KEYSTORE_PASS / RELEASE_KEYSTORE_ALIAS
+// 未提供密钥时 release 构建不签名（由发布方自行处理），保证仓库内无密钥依赖。
+val releaseKeystoreFile: String? = System.getenv("RELEASE_KEYSTORE_FILE") ?: project.findProperty("RELEASE_KEYSTORE_FILE") as String?
+val releaseKeystorePass: String? = System.getenv("RELEASE_KEYSTORE_PASS") ?: project.findProperty("RELEASE_KEYSTORE_PASS") as String?
+val releaseKeystoreAlias: String = System.getenv("RELEASE_KEYSTORE_ALIAS") ?: project.findProperty("RELEASE_KEYSTORE_ALIAS") as String? ?: "opiconchanger"
+
 android {
     namespace = "com.opiconchanger"
     compileSdk = 37
@@ -22,17 +30,22 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore/debug.jks")
-            storePassword = "android"
-            keyAlias = "opiconchanger"
-            keyPassword = "android"
+            if (releaseKeystoreFile != null && releaseKeystorePass != null) {
+                storeFile = File(releaseKeystoreFile)
+                storePassword = releaseKeystorePass
+                keyAlias = releaseKeystoreAlias
+                keyPassword = releaseKeystorePass
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // 仅当 CI/环境提供了密钥时才签名；否则保持未签名（由发布方自行处理）
+            signingConfig = signingConfigs.findByName("release")?.takeIf {
+                releaseKeystoreFile != null && releaseKeystorePass != null
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
