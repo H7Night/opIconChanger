@@ -412,21 +412,19 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val sb = StringBuilder()
 
-            // 1. App 自身日志 (filesDir)
-            val appDiag = java.io.File(filesDir, "opicon_diag.txt")
-            sb.appendLine("═══ App 诊断 (filesDir) ═══")
-            sb.appendLine("存在: ${appDiag.exists()}")
+            // 桌面检测
+            sb.appendLine("═══ 桌面检测 ═══")
+            sb.appendLine("当前桌面: $currentLauncherPackage")
+            sb.appendLine(
+                if (currentLauncherPackage == MainHook.LAUNCHER_PACKAGE) "✅ 已匹配"
+                else "⚠️ 未匹配，需在 LSPosed 勾选 $currentLauncherPackage"
+            )
 
-            // 2. Launcher 进程诊断 (/data/oplus/uxicons/choose/)
+            // Launcher 进程诊断
             val hookDiag = java.io.File(IconPaths.DIAG_FILE)
             sb.appendLine()
             sb.appendLine("═══ Launcher 诊断 ═══")
-            sb.appendLine("路径: ${hookDiag.absolutePath}")
-            sb.appendLine("存在: ${hookDiag.exists()}")
             if (hookDiag.exists()) {
-                sb.appendLine("大小: ${hookDiag.length()}B")
-                sb.appendLine("── 内容 ──")
-                // 跨进程目录无直接读取权限，走 su
                 val diagContent = runCatching { hookDiag.readText() }
                     .getOrElse {
                         runCatching {
@@ -436,23 +434,13 @@ class MainActivity : AppCompatActivity() {
                     }
                 sb.appendLine(diagContent.takeLast(8000))
             } else {
-                sb.appendLine("⚠️ Launcher 诊断文件不存在")
-                sb.appendLine("   → Launcher 进程的 onResume Hook 未触发")
-                sb.appendLine("   → 或 /data/oplus/uxicons/choose/ 不可写")
+                sb.appendLine("⚠️ 诊断文件不存在，Launcher Hook 未触发")
             }
 
-            // 2. Logcat (作为补充)
+            // Logcat
             sb.appendLine()
             sb.appendLine("═══ Logcat ═══")
-            val logcat = fetchLogcat()
-            sb.appendLine(logcat)
-
-            // 3. 当前检测到的桌面信息
-            sb.appendLine()
-            sb.appendLine("═══ 桌面检测 ═══")
-            sb.appendLine("当前识别桌面包名: $currentLauncherPackage")
-            sb.appendLine("MainHook 目标包名:  ${MainHook.LAUNCHER_PACKAGE}")
-            sb.appendLine("是否匹配:           ${currentLauncherPackage == MainHook.LAUNCHER_PACKAGE}")
+            sb.appendLine(fetchLogcat())
 
             rootAvailable = isRootAvailable()
             withContext(Dispatchers.Main) { showLog(sb.toString()) }
@@ -507,15 +495,11 @@ class MainActivity : AppCompatActivity() {
     private fun fetchLogcat(): String {
         // 尝试多种方式读取 logcat
         val direct = RootExec.execDirect("logcat", "-d", "-s", "opIconChanger:*", "-t", "100")
-        if (direct.stdout.isNotBlank()) return "[直接] (exit=${direct.exitCode}):\n${direct.stdout}"
+        if (direct.stdout.isNotBlank()) return direct.stdout
         if (direct.exitCode == 0 && direct.stderr.isBlank()) return "(logcat 无匹配日志)"
         // 需要 root
         val root = RootExec.exec("logcat -d -s opIconChanger:* -t 100")
-        return if (root.stdout.isNotBlank()) {
-            "[Root] (exit=${root.exitCode}):\n${root.stdout}"
-        } else {
-            "(logcat 读取失败 — 所有方式均不可用)"
-        }
+        return if (root.stdout.isNotBlank()) root.stdout else "(logcat 读取失败)"
     }
 
     data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable, val isSystem: Boolean)
