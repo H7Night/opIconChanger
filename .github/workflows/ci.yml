@@ -28,16 +28,26 @@ jobs:
 
       - name: Install Android SDK platform
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "=== .knownPackages (before) ==="
+          cat "$ANDROID_HOME/.knownPackages" 2>/dev/null | grep -i "android-37" || echo "(no android-37 entries)"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-37.0" >/dev/null
-          rm -rf "$ANDROID_HOME/platforms/android-37"
-          mv "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
-          printf '%s\n' 'AndroidVersion.ApiLevel=37' 'Pkg.Desc=Android SDK Platform 37' 'Pkg.DisplayName=Android SDK Platform 37' 'Pkg.Id=platforms;android-37' 'Pkg.Path=platforms;android-37' 'Pkg.Revision=1' > "$ANDROID_HOME/platforms/android-37/source.properties"
-          echo "--- android-37/source.properties ---"
-          cat "$ANDROID_HOME/platforms/android-37/source.properties"
+          for SDK in "$ANDROID_HOME" "$ANDROID_SDK_ROOT"; do
+            [ -n "$SDK" ] || continue
+            rm -rf "$SDK/platforms/android-37"
+            mkdir -p "$SDK/platforms/android-37"
+            cp -r "$SDK/platforms/android-37.0/." "$SDK/platforms/android-37/"
+            printf '%s\n' 'AndroidVersion.ApiLevel=37' 'Pkg.Desc=Android SDK Platform 37' 'Pkg.DisplayName=Android SDK Platform 37' 'Pkg.Id=platforms;android-37' 'Pkg.Path=platforms;android-37' 'Pkg.Revision=2' > "$SDK/platforms/android-37/source.properties"
+            echo "--- $SDK/platforms/android-37/source.properties ---"
+            cat "$SDK/platforms/android-37/source.properties"
+          done
+          echo "--- .knownPackages (after) ---"
+          cat "$ANDROID_HOME/.knownPackages" 2>/dev/null | grep -i "android-37" || echo "(no android-37 entries)"
           echo "--- platforms dir ---"
-          ls "$ANDROID_HOME/platforms"
+          ls "$ANDROID_HOME/platforms" | grep -E "android-37"
 
       - name: Cache Gradle
         uses: actions/cache@v4
