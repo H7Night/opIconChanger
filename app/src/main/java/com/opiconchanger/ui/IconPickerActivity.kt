@@ -37,6 +37,7 @@ class IconPickerActivity : AppCompatActivity() {
     private lateinit var tvEmpty: TextView
 
     private var iconPack: String = "app.lawnchair.lawnicons"
+    private var searchJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +60,14 @@ class IconPickerActivity : AppCompatActivity() {
         etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) { performSearch(); true } else false
         }
+        etSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                searchJob?.cancel()
+                searchJob = lifecycleScope.launch { kotlinx.coroutines.delay(300); performSearch() }
+            }
+        })
         etSearch.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
@@ -87,7 +96,7 @@ class IconPickerActivity : AppCompatActivity() {
         tvEmpty.visibility = View.VISIBLE
         tvEmpty.text = getString(R.string.loading_icons)
         lifecycleScope.launch {
-            val merged = parser.searchFuzzy(iconPack, query)
+            val merged = parser.searchFuzzy(iconPack, query).distinctBy { it.drawableName }
             adapter.submitList(merged)
             tvResultCount.text = if (query.isBlank()) {
                 getString(R.string.icon_total_count, merged.size)
@@ -123,15 +132,20 @@ class IconAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, vt: Int) = VH(LayoutInflater.from(parent.context).inflate(R.layout.item_icon_entry, parent, false))
     override fun onBindViewHolder(h: VH, pos: Int) = h.bind(items[pos])
+    override fun onViewRecycled(h: VH) { h.cancelLoad() }
     override fun getItemCount() = items.size
 
     inner class VH(v: View) : RecyclerView.ViewHolder(v) {
         private val iv = v.findViewById<ImageView>(R.id.ivIcon)
+        private var loadJob: kotlinx.coroutines.Job? = null
+
+        fun cancelLoad() { loadJob?.cancel(); loadJob = null }
 
         fun bind(e: IconEntry) {
             iv.setImageResource(android.R.drawable.ic_menu_gallery)
             iv.setAlpha(0.35f)
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            cancelLoad()
+            loadJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                 val bmp = parser.loadIconBitmap(e.iconPackPackage, e.drawableName)
                 if (bmp != null) { iv.setImageBitmap(bmp); iv.setAlpha(1f) }
             }

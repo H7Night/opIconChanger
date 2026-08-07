@@ -21,8 +21,10 @@ opIconChanger/
 │       │   │   └── IconPackParser.kt      # Icon Pack 解析引擎（appfilter.xml + 模糊搜索）
 │       │   ├── model/
 │       │   │   ├── IconEntry.kt           # Icon Pack 条目数据模型
-│       │   │   └── IconRequest.kt         # 跨进程请求协议（JSON 文件）
+│       │   │   └── IconRequest.kt         # 跨进程请求协议（JSON + 严格字段校验）
 │       │   └── utils/
+│       │       ├── IconPaths.kt           # 全局路径/包名常量（App 与 Hook 共用）
+│       │       ├── RootExec.kt            # 统一 su 执行器（超时/退出码/rootAvailable）
 │       │       ├── LogRenderer.kt         # 终端风格日志渲染（行号 + 级别配色 + 关键词高亮）
 │       │       ├── LogUtils.kt            # 日志工具
 │       │       └── RestartUtils.kt        # 桌面重启工具
@@ -41,18 +43,28 @@ opIconChanger/
 
 **数据流**：
 ```
-opIconChanger UI → JSON 请求文件 → Launcher.onResume Hook
+opIconChanger UI → JSON 请求文件(/data/oplus/uxicons/choose/opicon_request.json，App 直写)
+  → Launcher.onResume Hook（校验属主 UID + 字段合法性）
   → getResourcesForApplication(iconPackPkg) → getDrawable
   → UxFileUtils.saveEditDrawableToDir() 反射调用
   → /data/oplus/uxicons/choose/<pkg>.{png,cfg}
   → EditedIconLoaderFactory 自动加载 → 桌面渲染
 ```
 
+**跨进程请求通道安全设计**（2026-08 加固）：
+- 请求文件首选 `/data/oplus/uxicons/choose/opicon_request.json`（UX 目录 drwxrwxrwx，App 可直接写入，**文件属主 = App UID**）
+- Launcher Hook 侧 `locateOwnRequestFile()` 用 `Os.stat` 校验文件属主 UID == `com.opiconchanger` UID，**非本模块写出的请求一律忽略并删除**
+- 兜底 `/data/local/tmp/opicon_request.json`（仅 root/shell 可写，普通应用无法伪造，经 su 写入）
+- 所有字段在 `IconRequest.fromJson` 严格校验：`targetPkg`/`iconPackPkg` 匹配包名正则 `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`（拒绝 `/ \ ..` 路径穿越），`drawableResName` 仅 `[a-zA-Z0-9_]+`
+- 处理串行化（单线程 Executor）+ 按 `path→mtime:length` 去重 + 文件大小上限 8KB，防止重复处理与内存攻击
+- 请求文件为 App 直写后由 Launcher 删除（UX 目录可删），不再存在"文件无法删除导致每次 onResume 重复处理"的问题
+
 **Hook 机制**（已在实机验证通过）：
 - Hook `android.app.Activity.onResume`（Launcher 进程内触发），轮询读取请求 JSON 文件，有请求则处理
-- Hook `MorphIconLoader.loadMorphUxIcon`，绕过系统 1×1 图标限制（`result == null` 时按 .cfg 兜底加载）
+- Hook `MorphIconLoader.loadMorphUxIcon`，绕过系统 1×1 图标限制（`result == null` 时按 .cfg 兜底加载；.cfg 中的包名/资源名同样经过正则校验，防伪造 cfg 加载任意资源）
 - 刷新：优先反射触发 `onBroadcastIntent`，失败则发送 `ICON_UPDATED` 广播兜底（Launcher 进程内发送可过签名权限）
 - `encase { loadApp() }` 不可靠，直接使用 Xposed 原生 API 挂 `Activity.onResume`
+- 日志：`MainHook.onInit` 中 `isDebug = BuildConfig.DEBUG`，生产构建关闭特权进程详细日志
 
 ## 反编译分析
 
@@ -119,10 +131,16 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 ### 方式 1：直接 Gradle
 
 ```bash
-./gradlew.bat assembleDebug        # debug（无 minify，快）
-./gradlew.bat assembleRelease      # release（用 keystore/debug.jks 签名）
-# 输出: app/build/outputs/apk/debug/app-debug.apk 或 .../release/app-release.apk
+./gradlew.bat assembleDebug        # debug（无 minify，快，本地开发用）
+./gradlew.bat assembleRelease      # release（仅 GitHub Actions 签名构建，本地不构建）
+# 输出: app/build/outputs/apk/debug/app-debug.apk
 ```
+
+**Release 签名与发布（仅 GitHub Actions）**：本地开发只构建 debug，release 只在 GitHub 上通过 tag 触发构建并发布。
+- 密钥 `keystore/release.jks`（别名 `opiconchanger`）与密码 `keystore/keystore.pass` 均被 gitignore，备份于 `C:\Users\user\Desktop\opIconChangerKeystore`（含 `.jks` / `.pass` / `.base64`）
+- 签名凭据通过环境变量注入：`RELEASE_KEYSTORE_FILE` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS`
+- CI：`RELEASE_KEYSTORE_B64` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS` 存于 GitHub Secrets，`release.yml` 解码后注入并创建 GitHub Release
+- 本地脚本不带签名；如需本地发布请自行临时注入上述环境变量后 `./gradlew assembleRelease`
 
 ### 方式 2：scripts/ 脚本（推荐）
 
@@ -130,9 +148,9 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 
 | 脚本 | 平台 | 作用 |
 |------|------|------|
-| `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 release APK |
+| `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 debug APK |
 | `scripts/buildDebugApk.sh` / `.ps1` | bash / PowerShell | 构建 debug APK（调试用） |
-| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 release 并 `adb install -r` 安装；签名不一致时自动卸载旧版重装 |
+| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 debug 并 `adb install -r` 安装；签名不一致时自动卸载旧版重装 |
 
 ```bash
 bash scripts/buildDebugApk.sh       # 快速构建 debug
@@ -159,11 +177,10 @@ adb uninstall com.opiconchanger
 ### 完整验证流程（改代码后必跑）
 
 ```bash
-powershell -File scripts/buildAndInstall.ps1   # 构建 release + 自动处理签名冲突后安装
+powershell -File scripts/buildAndInstall.ps1   # 构建 debug + 安装
 # 或快速迭代：
 ./gradlew.bat assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk   # 注意：debug 与 release 签名不同，
-                                                            # 切签名需先卸载旧版本
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am force-stop com.android.launcher && adb shell monkey -p com.opiconchanger 1
 # 或点击桌面图标启动，观察 App 日志 Tab
 ```

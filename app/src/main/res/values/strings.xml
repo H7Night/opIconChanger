@@ -52,4 +52,18 @@
     <string name="app_list_loading">正在加载应用列表…</string>
     <string name="app_icon_change">更换图标</string>
     <string name="app_icon_changed">图标已更换，重启桌面生效</string>
+
+    <!-- App 列表筛选 -->
+    <string name="app_filter_all">全部</string>
+    <string name="app_filter_system">系统应用</string>
+    <string name="app_filter_user">用户应用</string>
+    <string name="app_filter_unadapted">无适配应用</string>
+    <string name="app_list_all_adapted">当前图标包已适配全部应用</string>
+
+    <string-array name="app_filter_options">
+        <item>@string/app_filter_all</item>
+        <item>@string/app_filter_system</item>
+        <item>@string/app_filter_user</item>
+        <item>@string/app_filter_unadapted</item>
+    </string-array>
 </resources>

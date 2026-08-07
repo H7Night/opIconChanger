@@ -38,6 +38,31 @@
             android:layout_marginStart="8dp" />
     </LinearLayout>
 
+    <!-- 筛选：全部 / 系统应用 / 用户应用 / 无适配 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="0dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="筛选"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:layout_marginEnd="8dp" />
+
+        <Spinner
+            android:id="@+id/spinnerAppFilter"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+
     <EditText
         android:id="@+id/etSearch"
         android:layout_width="match_parent"

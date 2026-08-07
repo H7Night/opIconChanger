@@ -1,12 +1,12 @@
 #!/bin/bash
-# opIconChanger - Build Release APK & Install to device
+# opIconChanger - Build Debug APK & Install to device (release 由 GitHub Actions 签名构建)
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # scripts/ 的上一级即项目根
 cd "$SCRIPT_DIR/.."
 
 echo "========================================"
-echo "  opIconChanger - Build & Install"
+echo "  opIconChanger - Build & Install (Debug)"
 echo "========================================"
 
 if [ ! -f "./gradlew" ]; then
@@ -20,11 +20,11 @@ if [ -z "$JAVA_HOME" ] && [ -d "$HOME/Abandon/Application/scoop/apps/openjdk17/c
 fi
 
 # --- Build ---
-echo "[1/2] Assembling release APK..."
-./gradlew assembleRelease
+echo "[1/2] Assembling debug APK..."
+./gradlew assembleDebug
 echo "       Done."
 
-APK="app/build/outputs/apk/release/app-release.apk"
+APK="app/build/outputs/apk/debug/app-debug.apk"
 if [ ! -f "$APK" ]; then
     echo "[FAIL] APK not found at $APK"
     exit 1

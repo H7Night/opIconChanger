@@ -5,7 +5,7 @@ plugins {
 }
 
 // release 签名密钥不落库：
-// - 本地只构建 debug（AGP 默认使用 ~/.android/debug.keystore，开发者自行签名）
+// - 本地只构建 debug；release 仅由 GitHub Actions 签名构建（解码 Secrets 注入环境变量）
 // - CI（GitHub Actions）先解码 Secrets 到文件，再注入 RELEASE_KEYSTORE_FILE / RELEASE_KEYSTORE_PASS / RELEASE_KEYSTORE_ALIAS
 // 未提供密钥时 release 构建不签名（由发布方自行处理），保证仓库内无密钥依赖。
 val releaseKeystoreFile: String? = System.getenv("RELEASE_KEYSTORE_FILE") ?: project.findProperty("RELEASE_KEYSTORE_FILE") as String?
@@ -100,6 +100,12 @@ dependencies {
 
     // Material Components (Material3 主题与组件，仅引入用到的部分)
     implementation("com.google.android.material:material:1.12.0")
+
+    // Unit tests (pure JVM logic only)
+    testImplementation("junit:junit:4.13.2")
+    // org.json: 真机由 Android 框架提供；单元测试中 Android 版被 mock（方法抛异常），
+    // 引入真实实现使 IconRequest 的 JSON 序列化/校验可测。
+    testImplementation("org.json:json:20240303")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

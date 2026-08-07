@@ -87,6 +87,11 @@ class IconPackParser(private val context: Context) {
             entries
         }
 
+    /** 当前 icon pack 适配（appfilter 中出现）的包名集合 */
+    suspend fun adaptedPackageSet(iconPackPackage: String): Set<String> =
+        iconPackCache[iconPackPackage]?.map { it.packageName }?.toSet()
+            ?: loadIconPack(iconPackPackage).map { it.packageName }.toSet()
+
     // ==================== 加载图标 Bitmap ====================
 
     suspend fun loadIconBitmap(iconPackPackage: String, drawableName: String): Bitmap? =

@@ -2,9 +2,9 @@
 .SYNOPSIS
     opIconChanger 一键构建脚本
 .DESCRIPTION
-    清理 → 编译 release APK → 输出到 app/build/outputs/apk/release/
+    清理 → 编译 debug APK → 输出到 app/build/outputs/apk/debug/
 .NOTES
-    签名配置: keystore/debug.jks (alias: opiconchanger, storepass: android)
+    本地只构建 debug；release 由 GitHub Actions 签名构建
 #>
 
 $ErrorActionPreference = "Stop"
@@ -33,8 +33,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "       Done." -ForegroundColor Green
 
-Write-Host "[2/3] Assembling release APK..." -ForegroundColor Yellow
-& $gradlew assembleRelease
+Write-Host "[2/3] Assembling debug APK..." -ForegroundColor Yellow
+& $gradlew assembleDebug
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[FAIL] Build failed! Check errors above." -ForegroundColor Red
     exit $LASTEXITCODE
@@ -42,7 +42,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "       Done." -ForegroundColor Green
 
 Write-Host "[3/3] Verifying output..." -ForegroundColor Yellow
-$apkPath = Join-Path $projectRoot "app\build\outputs\apk\release\app-release.apk"
+$apkPath = Join-Path $projectRoot "app\build\outputs\apk\debug\app-debug.apk"
 if (Test-Path $apkPath) {
     $size = [math]::Round((Get-Item $apkPath).Length / 1KB, 1)
     Write-Host "       APK: $apkPath ($size KB)" -ForegroundColor Green
@@ -56,6 +56,6 @@ Write-Host "  Build Complete!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "To install:" -ForegroundColor White
-Write-Host "  adb install app\build\outputs\apk\release\app-release.apk" -ForegroundColor Gray
+Write-Host "  adb install app\build\outputs\apk\debug\app-debug.apk" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Then enable in LSPosed → scope: 'System Launcher'" -ForegroundColor Gray

@@ -37,21 +37,21 @@
     <color name="surface_container_high">#E7EAE6</color>
     <color name="surface_container_highest">#E1E5E1</color>
 
-    <!-- ═══════════ 终端面板 (日志) ═══════════ -->
-    <color name="terminal_bg">#14161A</color>
-    <color name="terminal_border">#222733</color>
-    <color name="terminal_strip_bg">#0D0F13</color>
-    <color name="terminal_text">#C8CDD8</color>
-    <color name="terminal_gutter">#3B4252</color>
-    <color name="terminal_info">#8A93A6</color>
-    <color name="terminal_warn">#E0A458</color>
-    <color name="terminal_error">#E06C75</color>
-    <color name="terminal_success">#3ECF8E</color>
-    <color name="terminal_section">#5EC3C2</color>
-    <color name="terminal_highlight_bg">#3E4A63</color>
-    <color name="terminal_highlight_fg">#FFFFFF</color>
+    <!-- ═══════════ 日志面板 (白底深色) ═══════════ -->
+    <color name="terminal_bg">#FFFFFF</color>
+    <color name="terminal_border">#E1E5E1</color>
+    <color name="terminal_strip_bg">#F3F4F1</color>
+    <color name="terminal_text">#1F2328</color>
+    <color name="terminal_gutter">#B0B6BF</color>
+    <color name="terminal_info">#57606A</color>
+    <color name="terminal_warn">#9A6700</color>
+    <color name="terminal_error">#CF222E</color>
+    <color name="terminal_success">#1A7F37</color>
+    <color name="terminal_section">#0550AE</color>
+    <color name="terminal_highlight_bg">#FFF3BF</color>
+    <color name="terminal_highlight_fg">#1F2328</color>
 
     <!-- Root 状态指示灯 -->
-    <color name="root_on">#39D353</color>
-    <color name="root_off">#4A4F5A</color>
+    <color name="root_on">#1A7F37</color>
+    <color name="root_off">#9A6700</color>
 </resources>

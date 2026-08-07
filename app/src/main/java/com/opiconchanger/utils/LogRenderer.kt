@@ -6,10 +6,10 @@ import android.text.Spanned
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import java.util.Locale
-import kotlin.math.max
 
 /**
- * 把日志文本渲染成终端风格 Spannable：行号 gutter + 日志级别配色 + 关键词高亮。
+ * 把日志文本渲染成 Spannable：级别配色 + 关键词高亮。
+ * 无行号；行首空白裁剪，折行自动与首字母对齐。
  */
 object LogRenderer {
 
@@ -23,7 +23,6 @@ object LogRenderer {
 
     fun render(raw: String, keyword: String, colors: Palette = Palette()): Pair<CharSequence, Stats> {
         val lines = raw.trimEnd('\n').split("\n")
-        val gutterWidth = max(3, lines.size.toString().length)
         val sp = SpannableStringBuilder()
         var matchLines = 0
         val kw = keyword.trim().lowercase(Locale.US)
@@ -31,26 +30,18 @@ object LogRenderer {
         lines.forEachIndexed { idx, line ->
             if (idx > 0) sp.append("\n")
 
-            // 行号 gutter
-            val lnStart = sp.length
-            sp.append(String.format(Locale.US, "%${gutterWidth}d│ ", idx + 1))
-            sp.setSpan(
-                ForegroundColorSpan(colors.gutter),
-                lnStart, sp.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-
-            // 正文 + 级别配色
+            val text = line.trimStart()
             val textStart = sp.length
-            sp.append(line)
+            sp.append(text)
             sp.setSpan(
-                ForegroundColorSpan(lineColor(line, colors)),
+                ForegroundColorSpan(lineColor(text, colors)),
                 textStart, sp.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
 
             // 关键词高亮 + 匹配行计数
             if (kw.isNotEmpty()) {
                 var matched = false
-                val lower = line.lowercase(Locale.US)
+                val lower = text.lowercase(Locale.US)
                 var from = 0
                 while (true) {
                     val at = lower.indexOf(kw, from)
@@ -82,14 +73,13 @@ object LogRenderer {
     }
 
     class Palette {
-        val gutter = Color.rgb(0x3B, 0x42, 0x52)
-        val text = Color.rgb(0xC8, 0xCD, 0xD8)
-        val info = Color.rgb(0x8A, 0x93, 0xA6)
-        val warn = Color.rgb(0xE0, 0xA4, 0x58)
-        val error = Color.rgb(0xE0, 0x6C, 0x75)
-        val success = Color.rgb(0x3E, 0xCF, 0x8E)
-        val section = Color.rgb(0x5E, 0xC3, 0xC2)
-        val highlightBg = Color.rgb(0x3E, 0x4A, 0x63)
-        val highlightFg = Color.WHITE
+        val text = Color.rgb(0x1F, 0x23, 0x28)
+        val info = Color.rgb(0x57, 0x60, 0x6A)
+        val warn = Color.rgb(0x9A, 0x67, 0x00)
+        val error = Color.rgb(0xCF, 0x22, 0x2E)
+        val success = Color.rgb(0x1A, 0x7F, 0x37)
+        val section = Color.rgb(0x05, 0x50, 0xAE)
+        val highlightBg = Color.rgb(0xFF, 0xF3, 0xBF)
+        val highlightFg = Color.rgb(0x1F, 0x23, 0x28)
     }
 }

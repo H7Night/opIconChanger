@@ -1,12 +1,12 @@
 #!/bin/bash
-# opIconChanger - Build Release APK
+# opIconChanger - Build Debug APK (本地只构建 debug；release 由 GitHub Actions 签名构建)
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # scripts/ 的上一级即项目根
 cd "$SCRIPT_DIR/.."
 
 echo "========================================"
-echo "  opIconChanger - Build Release APK"
+echo "  opIconChanger - Build Debug APK"
 echo "========================================"
 
 if [ ! -f "./gradlew" ]; then
@@ -18,11 +18,11 @@ if [ -z "$JAVA_HOME" ] && [ -d "$HOME/Abandon/Application/scoop/apps/openjdk17/c
     export JAVA_HOME="$HOME/Abandon/Application/scoop/apps/openjdk17/current"
 fi
 
-echo "[1/2] Assembling release APK..."
-./gradlew assembleRelease
+echo "[1/2] Assembling debug APK..."
+./gradlew assembleDebug
 echo "       Done."
 
-APK="app/build/outputs/apk/release/app-release.apk"
+APK="app/build/outputs/apk/debug/app-debug.apk"
 if [ -f "$APK" ]; then
     SIZE=$(du -h "$APK" | cut -f1)
     echo "[2/2] APK: $APK ($SIZE)"
