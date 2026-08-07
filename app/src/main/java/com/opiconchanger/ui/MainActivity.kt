@@ -15,6 +15,7 @@ import com.opiconchanger.utils.AppFilter
 import com.opiconchanger.utils.AppFilterPredicates
 import com.opiconchanger.utils.CustomIconStore
 import com.opiconchanger.utils.FilterableApp
+import com.opiconchanger.utils.IconApplier
 import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
@@ -385,16 +386,26 @@ class MainActivity : AppCompatActivity() {
                 LogUtils.w("  su 路径不可用: ${e.message}")
             }
 
+            // 直接落盘 .png + .cfg，列表立即感知（无需等 Launcher onResume）
+            val direct = IconApplier.applyIcon(applicationContext, app.pkg, pack, drawable)
+            if (direct) {
+                LogUtils.i("✅ 图标已直接落盘: ${app.pkg} → $drawable")
+                success = true
+            } else {
+                LogUtils.w("⚠️ 直接落盘失败，依赖 Launcher Hook 处理请求文件")
+            }
+
             withContext(Dispatchers.Main) {
                 if (success) {
                     Toast.makeText(this@MainActivity,
-                        "${app.label}\n图标: $drawable\n\n请返回桌面以应用图标",
+                        "${app.label}\n图标: $drawable\n\n已应用，返回桌面刷新图标",
                         Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this@MainActivity,
                         "写入失败\n请检查日志 Tab", Toast.LENGTH_LONG).show()
                 }
-                if (success && appFilter == AppFilter.UNADAPTED) reloadCustomizedSet(retries = 3)
+                // 无论直接落盘成败都刷新列表；直接落盘成功时立即生效
+                if (appFilter == AppFilter.UNADAPTED) reloadCustomizedSet(if (direct) 0 else 3)
             }
         }
     }
