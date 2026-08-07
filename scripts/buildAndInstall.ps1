@@ -1,8 +1,9 @@
 ﻿<#
 .SYNOPSIS
-    opIconChanger - Build Release APK & Install to device
+    opIconChanger - Build Debug APK & Install to device
 .DESCRIPTION
-    clean → assembleRelease → verify → adb install
+    clean → assembleDebug → verify → adb install
+    release 由 GitHub Actions 签名构建
 #>
 $ErrorActionPreference = "Stop"
 # scripts/ 的上一级即项目根
@@ -24,31 +25,16 @@ $env:JAVA_HOME = if (Test-Path "$env:USERPROFILE\Abandon\Application\scoop\apps\
     "$env:USERPROFILE\Abandon\Application\scoop\apps\openjdk17\current"
 } elseif ($env:JAVA_HOME) { $env:JAVA_HOME } else { $null }
 
-# --- Release 签名（自动注入签名环境变量） ---
-$env:RELEASE_KEYSTORE_FILE = $null
-$env:RELEASE_KEYSTORE_PASS = $null
-$env:RELEASE_KEYSTORE_ALIAS = $null
-$keystoreFile = Join-Path $projectRoot "keystore\release.jks"
-$keystorePassFile = Join-Path $projectRoot "keystore\keystore.pass"
-if ((Test-Path $keystoreFile) -and (Test-Path $keystorePassFile)) {
-    $env:RELEASE_KEYSTORE_FILE = $keystoreFile
-    $env:RELEASE_KEYSTORE_PASS = (Get-Content $keystorePassFile -Raw).Trim()
-    $env:RELEASE_KEYSTORE_ALIAS = "opiconchanger"
-    Write-Host "[SIGN] Release 签名已启用 (keystore/release.jks)" -ForegroundColor Green
-} else {
-    Write-Host "[WARN] 未找到 keystore/release.jks 或 keystore/keystore.pass，构建未签名 APK" -ForegroundColor Yellow
-}
-
 # --- Build ---
-Write-Host "[1/2] Assembling release APK..." -ForegroundColor Yellow
-& $gradlew assembleRelease
+Write-Host "[1/2] Assembling debug APK..." -ForegroundColor Yellow
+& $gradlew assembleDebug
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[FAIL] Build failed!" -ForegroundColor Red
     exit $LASTEXITCODE
 }
 Write-Host "       Done." -ForegroundColor Green
 
-$apkPath = Join-Path $projectRoot "app\build\outputs\apk\release\app-release.apk"
+$apkPath = Join-Path $projectRoot "app\build\outputs\apk\debug\app-debug.apk"
 if (-not (Test-Path $apkPath)) {
     Write-Host "[FAIL] APK not found at $apkPath" -ForegroundColor Red
     exit 1

@@ -131,15 +131,16 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 ### 方式 1：直接 Gradle
 
 ```bash
-./gradlew.bat assembleDebug        # debug（无 minify，快）
-./gradlew.bat assembleRelease      # release（无 keystore 时产出未签名 app-release-unsigned.apk）
-# 输出: app/build/outputs/apk/debug/app-debug.apk 或 .../release/app-release.apk
+./gradlew.bat assembleDebug        # debug（无 minify，快，本地开发用）
+./gradlew.bat assembleRelease      # release（仅 GitHub Actions 签名构建，本地不构建）
+# 输出: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-**Release 签名机制**：`keystore/release.jks`（别名 `opiconchanger`）与密码 `keystore/keystore.pass` 均已被 gitignore，不落库。
-签名凭据通过环境变量注入：`RELEASE_KEYSTORE_FILE` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS`。
-- 本地：`scripts/build*.sh/.bat/.ps1` 自动读取 `keystore/release.jks` + `keystore/keystore.pass` 注入环境变量 → 产出已签名 `app-release.apk`
-- CI：`RELEASE_KEYSTORE_B64` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS` 存于 GitHub Secrets，`release.yml` 解码后注入
+**Release 签名与发布（仅 GitHub Actions）**：本地开发只构建 debug，release 只在 GitHub 上通过 tag 触发构建并发布。
+- 密钥 `keystore/release.jks`（别名 `opiconchanger`）与密码 `keystore/keystore.pass` 均被 gitignore，备份于 `C:\Users\user\Desktop\opIconChangerKeystore`（含 `.jks` / `.pass` / `.base64`）
+- 签名凭据通过环境变量注入：`RELEASE_KEYSTORE_FILE` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS`
+- CI：`RELEASE_KEYSTORE_B64` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS` 存于 GitHub Secrets，`release.yml` 解码后注入并创建 GitHub Release
+- 本地脚本不带签名；如需本地发布请自行临时注入上述环境变量后 `./gradlew assembleRelease`
 
 ### 方式 2：scripts/ 脚本（推荐）
 
@@ -147,9 +148,9 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 
 | 脚本 | 平台 | 作用 |
 |------|------|------|
-| `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 release APK |
+| `scripts/build.sh` / `.bat` / `.ps1` | bash / cmd / PowerShell | 构建 debug APK |
 | `scripts/buildDebugApk.sh` / `.ps1` | bash / PowerShell | 构建 debug APK（调试用） |
-| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 release 并 `adb install -r` 安装；签名不一致时自动卸载旧版重装 |
+| `scripts/buildAndInstall.sh` / `.ps1` | bash / PowerShell | 构建 debug 并 `adb install -r` 安装；签名不一致时自动卸载旧版重装 |
 
 ```bash
 bash scripts/buildDebugApk.sh       # 快速构建 debug
@@ -176,11 +177,10 @@ adb uninstall com.opiconchanger
 ### 完整验证流程（改代码后必跑）
 
 ```bash
-powershell -File scripts/buildAndInstall.ps1   # 构建 release + 自动处理签名冲突后安装
+powershell -File scripts/buildAndInstall.ps1   # 构建 debug + 安装
 # 或快速迭代：
 ./gradlew.bat assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk   # 注意：debug 与 release 签名不同，
-                                                            # 切签名需先卸载旧版本
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am force-stop com.android.launcher && adb shell monkey -p com.opiconchanger 1
 # 或点击桌面图标启动，观察 App 日志 Tab
 ```
