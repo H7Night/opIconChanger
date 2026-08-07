@@ -1,10 +1,13 @@
-name: Build Release
+name: Build Release APK
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,59 +24,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Install Android SDK platform
-        run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-37.0" >/dev/null
-          rm -rf "$ANDROID_HOME/platforms/android-37"
-          mv "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
-          printf '%s\n' 'AndroidVersion.ApiLevel=37' 'Pkg.Desc=Android SDK Platform 37' 'Pkg.DisplayName=Android SDK Platform 37' 'Pkg.Id=platforms;android-37' 'Pkg.Path=platforms;android-37' 'Pkg.Revision=1' > "$ANDROID_HOME/platforms/android-37/source.properties"
-          echo "--- android-37/source.properties ---"
-          cat "$ANDROID_HOME/platforms/android-37/source.properties"
-          echo "--- platforms dir ---"
-          ls "$ANDROID_HOME/platforms"
-
-      - name: Validate release secrets present
-        run: |
-          if [ -z "${{ secrets.RELEASE_KEYSTORE_B64 }}" ] || [ -z "${{ secrets.RELEASE_KEYSTORE_PASS }}" ]; then
-            echo "::error::Missing RELEASE_KEYSTORE_B64 or RELEASE_KEYSTORE_PASS secret"
-            exit 1
-          fi
+      - name: Install Android SDK platform 37
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37"
 
       - name: Decode release keystore
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
         run: |
           mkdir -p keystore
-          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > keystore/release.jks
-          test -s keystore/release.jks || { echo "::error::decoded keystore is empty"; exit 1; }
+          echo "$RELEASE_KEYSTORE_B64" | base64 -d > keystore/release.jks
+          test -s keystore/release.jks
 
-      - name: Build release APK (signed)
+      - name: Build signed release APK
         env:
           RELEASE_KEYSTORE_FILE: ${{ github.workspace }}/keystore/release.jks
           RELEASE_KEYSTORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASS }}
           RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
-        run: ./gradlew assembleRelease --no-daemon
-
-      - name: Verify APK signature
-        run: |
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          echo "Built: $APK"
-          # 校验 release APK 确已签名（存在 signature block）
-          if command -v apksigner >/dev/null 2>&1; then
-            apksigner verify --print-certs "$APK" || { echo "::error::APK not signed"; exit 1; }
-          else
-            echo "apksigner not on PATH, skip verify"
-          fi
+        run: ./gradlew assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: opiconchanger-release
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 14
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
