@@ -19,6 +19,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       - name: Validate release secrets present
         run: |
           if [ -z "${{ secrets.RELEASE_KEYSTORE_B64 }}" ] || [ -z "${{ secrets.RELEASE_KEYSTORE_PASS }}" ]; then
