@@ -132,15 +132,20 @@ class IconAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, vt: Int) = VH(LayoutInflater.from(parent.context).inflate(R.layout.item_icon_entry, parent, false))
     override fun onBindViewHolder(h: VH, pos: Int) = h.bind(items[pos])
+    override fun onViewRecycled(h: VH) { h.cancelLoad() }
     override fun getItemCount() = items.size
 
     inner class VH(v: View) : RecyclerView.ViewHolder(v) {
         private val iv = v.findViewById<ImageView>(R.id.ivIcon)
+        private var loadJob: kotlinx.coroutines.Job? = null
+
+        fun cancelLoad() { loadJob?.cancel(); loadJob = null }
 
         fun bind(e: IconEntry) {
             iv.setImageResource(android.R.drawable.ic_menu_gallery)
             iv.setAlpha(0.35f)
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            cancelLoad()
+            loadJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                 val bmp = parser.loadIconBitmap(e.iconPackPackage, e.drawableName)
                 if (bmp != null) { iv.setImageBitmap(bmp); iv.setAlpha(1f) }
             }

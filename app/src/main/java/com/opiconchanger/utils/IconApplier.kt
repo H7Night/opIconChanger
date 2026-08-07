@@ -18,7 +18,6 @@ import java.util.Properties
  * 「无适配应用」列表实时移除该应用。
  */
 object IconApplier {
-    private const val UX_ICON_DIR = "/data/oplus/uxicons/choose"
     private const val ICON_SIZE = 168
 
     /**
@@ -55,8 +54,8 @@ object IconApplier {
     }
 
     private fun writeFiles(context: Context, targetPkg: String, bitmap: Bitmap, cfgText: String): Boolean {
-        val pngTarget = File(UX_ICON_DIR, "$targetPkg.png")
-        val cfgTarget = File(UX_ICON_DIR, "$targetPkg.cfg")
+        val pngTarget = File(IconPaths.UX_ICON_DIR, "$targetPkg.png")
+        val cfgTarget = File(IconPaths.UX_ICON_DIR, "$targetPkg.cfg")
         // 尝试直接写（目录 drwxrwxrwx，但 SELinux 可能拒绝）
         if (writeDirect(pngTarget, cfgTarget, bitmap, cfgText)) return true
         // 兜底：su 写入
@@ -81,11 +80,13 @@ object IconApplier {
         val tmpCfg = File(tmpDir, cfgTarget.name)
         tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         tmpCfg.writeText(cfgText)
-        val cmd = "mkdir -p $UX_ICON_DIR && cp '${tmpPng.absolutePath}' '${pngTarget.absolutePath}' && cp '${tmpCfg.absolutePath}' '${cfgTarget.absolutePath}' && chmod 666 '${pngTarget.absolutePath}' '${cfgTarget.absolutePath}'"
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-        p.waitFor()
+        val cmd = "mkdir -p ${RootExec.shQuote(IconPaths.UX_ICON_DIR)} && " +
+            "cp ${RootExec.shQuote(tmpPng.absolutePath)} ${RootExec.shQuote(pngTarget.absolutePath)} && " +
+            "cp ${RootExec.shQuote(tmpCfg.absolutePath)} ${RootExec.shQuote(cfgTarget.absolutePath)} && " +
+            "chmod 666 ${RootExec.shQuote(pngTarget.absolutePath)} ${RootExec.shQuote(cfgTarget.absolutePath)}"
+        val result = RootExec.exec(cmd)
         tmpPng.delete(); tmpCfg.delete()
-        p.exitValue() == 0
+        result.succeeded
     } catch (e: Exception) {
         LogUtils.w("IconApplier su 写入失败: ${e.message}")
         false

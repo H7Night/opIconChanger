@@ -21,8 +21,10 @@ opIconChanger/
 │       │   │   └── IconPackParser.kt      # Icon Pack 解析引擎（appfilter.xml + 模糊搜索）
 │       │   ├── model/
 │       │   │   ├── IconEntry.kt           # Icon Pack 条目数据模型
-│       │   │   └── IconRequest.kt         # 跨进程请求协议（JSON 文件）
+│       │   │   └── IconRequest.kt         # 跨进程请求协议（JSON + 严格字段校验）
 │       │   └── utils/
+│       │       ├── IconPaths.kt           # 全局路径/包名常量（App 与 Hook 共用）
+│       │       ├── RootExec.kt            # 统一 su 执行器（超时/退出码/rootAvailable）
 │       │       ├── LogRenderer.kt         # 终端风格日志渲染（行号 + 级别配色 + 关键词高亮）
 │       │       ├── LogUtils.kt            # 日志工具
 │       │       └── RestartUtils.kt        # 桌面重启工具
@@ -41,18 +43,28 @@ opIconChanger/
 
 **数据流**：
 ```
-opIconChanger UI → JSON 请求文件 → Launcher.onResume Hook
+opIconChanger UI → JSON 请求文件(/data/oplus/uxicons/choose/opicon_request.json，App 直写)
+  → Launcher.onResume Hook（校验属主 UID + 字段合法性）
   → getResourcesForApplication(iconPackPkg) → getDrawable
   → UxFileUtils.saveEditDrawableToDir() 反射调用
   → /data/oplus/uxicons/choose/<pkg>.{png,cfg}
   → EditedIconLoaderFactory 自动加载 → 桌面渲染
 ```
 
+**跨进程请求通道安全设计**（2026-08 加固）：
+- 请求文件首选 `/data/oplus/uxicons/choose/opicon_request.json`（UX 目录 drwxrwxrwx，App 可直接写入，**文件属主 = App UID**）
+- Launcher Hook 侧 `locateOwnRequestFile()` 用 `Os.stat` 校验文件属主 UID == `com.opiconchanger` UID，**非本模块写出的请求一律忽略并删除**
+- 兜底 `/data/local/tmp/opicon_request.json`（仅 root/shell 可写，普通应用无法伪造，经 su 写入）
+- 所有字段在 `IconRequest.fromJson` 严格校验：`targetPkg`/`iconPackPkg` 匹配包名正则 `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`（拒绝 `/ \ ..` 路径穿越），`drawableResName` 仅 `[a-zA-Z0-9_]+`
+- 处理串行化（单线程 Executor）+ 按 `path→mtime:length` 去重 + 文件大小上限 8KB，防止重复处理与内存攻击
+- 请求文件为 App 直写后由 Launcher 删除（UX 目录可删），不再存在"文件无法删除导致每次 onResume 重复处理"的问题
+
 **Hook 机制**（已在实机验证通过）：
 - Hook `android.app.Activity.onResume`（Launcher 进程内触发），轮询读取请求 JSON 文件，有请求则处理
-- Hook `MorphIconLoader.loadMorphUxIcon`，绕过系统 1×1 图标限制（`result == null` 时按 .cfg 兜底加载）
+- Hook `MorphIconLoader.loadMorphUxIcon`，绕过系统 1×1 图标限制（`result == null` 时按 .cfg 兜底加载；.cfg 中的包名/资源名同样经过正则校验，防伪造 cfg 加载任意资源）
 - 刷新：优先反射触发 `onBroadcastIntent`，失败则发送 `ICON_UPDATED` 广播兜底（Launcher 进程内发送可过签名权限）
 - `encase { loadApp() }` 不可靠，直接使用 Xposed 原生 API 挂 `Activity.onResume`
+- 日志：`MainHook.onInit` 中 `isDebug = BuildConfig.DEBUG`，生产构建关闭特权进程详细日志
 
 ## 反编译分析
 

@@ -7,16 +7,14 @@ import android.content.Context
  */
 object RestartUtils {
 
-    private const val LAUNCHER_PKG = "com.android.launcher"
-
     /**
      * 重启桌面
      */
     fun restartLauncher(context: Context) {
         try {
-            Runtime.getRuntime().exec(arrayOf("su", "-c", "am force-stop $LAUNCHER_PKG")).waitFor()
+            RootExec.exec("am force-stop ${RootExec.shQuote(IconPaths.LAUNCHER_PACKAGE)}")
             Thread.sleep(500)
-            context.packageManager.getLaunchIntentForPackage(LAUNCHER_PKG)?.let {
+            context.packageManager.getLaunchIntentForPackage(IconPaths.LAUNCHER_PACKAGE)?.let {
                 it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(it)
             }

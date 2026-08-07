@@ -90,6 +90,9 @@ dependencies {
 
     // Unit tests (pure JVM logic only)
     testImplementation("junit:junit:4.13.2")
+    // org.json: 真机由 Android 框架提供；单元测试中 Android 版被 mock（方法抛异常），
+    // 引入真实实现使 IconRequest 的 JSON 序列化/校验可测。
+    testImplementation("org.json:json:20240303")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

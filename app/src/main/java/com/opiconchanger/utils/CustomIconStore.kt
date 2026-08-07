@@ -5,11 +5,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object CustomIconStore {
-    private const val UX_ICON_DIR = "/data/oplus/uxicons/choose"
-
     /** 已手动更换图标的包名集合（该目录下存在 <pkg>.cfg）。 */
     suspend fun customizedPackageSet(): Set<String> = withContext(Dispatchers.IO) {
-        val files = runCatching { File(UX_ICON_DIR).listFiles() }.getOrNull()
+        val files = runCatching { File(IconPaths.UX_ICON_DIR).listFiles() }.getOrNull()
         val result = if (files != null) {
             files.filter { it.isFile && it.name.endsWith(".cfg") }
                 .map { it.name.removeSuffix(".cfg") }
@@ -22,10 +20,9 @@ object CustomIconStore {
     }
 
     private fun suListCfgPackages(): Set<String> = try {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "ls -1 $UX_ICON_DIR/*.cfg 2>/dev/null"))
-        val out = p.inputStream.bufferedReader().readText()
-        p.waitFor()
-        parseCustomizedPackages(out)
+        // UX_ICON_DIR 为内部常量，无需 shell 引用；保留 glob 展开
+        val r = RootExec.exec("ls -1 ${IconPaths.UX_ICON_DIR}/*.cfg 2>/dev/null")
+        parseCustomizedPackages(r.stdout)
     } catch (e: Exception) {
         LogUtils.w("CustomIconStore su ls 失败: ${e.message}")
         emptySet()

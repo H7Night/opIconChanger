@@ -16,9 +16,11 @@ import com.opiconchanger.utils.AppFilterPredicates
 import com.opiconchanger.utils.CustomIconStore
 import com.opiconchanger.utils.FilterableApp
 import com.opiconchanger.utils.IconApplier
+import com.opiconchanger.utils.IconPaths
 import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
+import com.opiconchanger.utils.RootExec
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -42,9 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 
 class MainActivity : AppCompatActivity() {
 
@@ -351,35 +351,32 @@ class MainActivity : AppCompatActivity() {
 
             var success = false
 
-            // 路径 1: filesDir + world-readable（Launcher 作为系统应用可读）
-            val localFile = File(filesDir, "opicon_request.json")
+            // 路径 1: UX 图标目录（drwxrwxrwx，App 可直写；文件属主 = App UID，Launcher Hook 据此校验）
+            val primaryFile = File(IconPaths.REQUEST_FILE)
             try {
-                localFile.writeText(json)
-                localFile.setReadable(true, false)
-                localFile.setWritable(true, false)
-                Runtime.getRuntime().exec(arrayOf("chmod", "666", localFile.absolutePath)).waitFor()
-                LogUtils.i("  filesDir 写入成功: ${localFile.absolutePath} (${json.length}B)")
+                primaryFile.parentFile?.mkdirs()
+                primaryFile.writeText(json)
+                primaryFile.setReadable(true, false)
+                LogUtils.i("  UX 目录请求文件写入成功: ${primaryFile.absolutePath} (${json.length}B)")
                 success = true
             } catch (e: Exception) {
-                LogUtils.w("  filesDir 失败: ${e.message}")
+                LogUtils.w("  UX 目录直写失败: ${e.message}")
             }
 
-            // 路径 2: 用 su 写到 /data/local/tmp/（如果可用）
+            // 路径 2: 用 su 写到 /data/local/tmp/（仅 root/shell 可写，作为兜底）
             try {
-                val tmpPath = "/data/local/tmp/opicon_request.json"
-                // 先写临时文件，再用 su cp
-                val tmpFile = File(filesDir, "opicon_req_tmp.json")
+                val tmpPath = IconPaths.REQUEST_FILE_ROOT
+                val tmpFile = File(cacheDir, "opicon_req_tmp.json")
                 tmpFile.writeText(json)
                 tmpFile.setReadable(true, false)
-                val p = Runtime.getRuntime().exec(arrayOf(
-                    "su", "-c", "cp ${tmpFile.absolutePath} $tmpPath && chmod 666 $tmpPath"
-                ))
-                p.waitFor()
-                if (p.exitValue() == 0) {
+                val result = RootExec.exec(
+                    "cp ${RootExec.shQuote(tmpFile.absolutePath)} ${RootExec.shQuote(tmpPath)} && chmod 666 ${RootExec.shQuote(tmpPath)}"
+                )
+                if (result.succeeded) {
                     LogUtils.i("  su → /data/local/tmp/ 成功")
                     success = true
                 } else {
-                    LogUtils.w("  su cp 失败 exit=${p.exitValue()}")
+                    LogUtils.w("  su cp 失败 exit=${result.exitCode} err=${result.stderr.trim()}")
                 }
                 tmpFile.delete()
             } catch (e: Exception) {
@@ -421,7 +418,7 @@ class MainActivity : AppCompatActivity() {
             sb.appendLine("存在: ${appDiag.exists()}")
 
             // 2. Launcher 进程诊断 (/data/oplus/uxicons/choose/)
-            val hookDiag = java.io.File("/data/oplus/uxicons/choose/opicon_hook_diag.txt")
+            val hookDiag = java.io.File(IconPaths.DIAG_FILE)
             sb.appendLine()
             sb.appendLine("═══ Launcher 诊断 ═══")
             sb.appendLine("路径: ${hookDiag.absolutePath}")
@@ -433,10 +430,8 @@ class MainActivity : AppCompatActivity() {
                 val diagContent = runCatching { hookDiag.readText() }
                     .getOrElse {
                         runCatching {
-                            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat ${hookDiag.absolutePath}"))
-                            val out = java.io.BufferedReader(java.io.InputStreamReader(p.inputStream)).readText()
-                            p.waitFor()
-                            out.ifBlank { "(空文件)" }
+                            val r = RootExec.exec("cat ${RootExec.shQuote(hookDiag.absolutePath)}")
+                            r.stdout.ifBlank { r.stderr.ifBlank { "(空文件)" } }
                         }.getOrDefault("(无权限读取)")
                     }
                 sb.appendLine(diagContent.takeLast(8000))
@@ -485,11 +480,7 @@ class MainActivity : AppCompatActivity() {
         tvRootStatus.text = statusText
     }
 
-    private fun isRootAvailable(): Boolean = try {
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "echo ok"))
-        p.waitFor()
-        p.exitValue() == 0
-    } catch (_: Exception) { false }
+    private fun isRootAvailable(): Boolean = RootExec.rootAvailable()
 
     private fun restartLauncher() {
         tvLog.text = "正在重启桌面…"
@@ -505,9 +496,7 @@ class MainActivity : AppCompatActivity() {
     private fun clearLogs() {
         tvLog.text = "正在清空…"
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "rm /data/oplus/uxicons/choose/opicon_hook_diag.txt")).waitFor()
-            } catch (_: Exception) {}
+            RootExec.exec("rm -f ${RootExec.shQuote(IconPaths.DIAG_FILE)}")
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@MainActivity, "日志已清空", Toast.LENGTH_SHORT).show()
                 loadLogs()
@@ -517,26 +506,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchLogcat(): String {
         // 尝试多种方式读取 logcat
-        val commands = listOf(
-            arrayOf("logcat", "-d", "-s", "opIconChanger:*", "-t", "100"),   // 无需 root
-            arrayOf("su", "-c", "logcat -d -s opIconChanger:* -t 100")       // 需要 root
-        )
-        for (cmd in commands) {
-            try {
-                val p = Runtime.getRuntime().exec(cmd)
-                val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
-                val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
-                p.waitFor()
-                val exitOk = p.exitValue() == 0
-                if (out.isNotBlank()) {
-                    val label = if (cmd[0] == "su") "[Root]" else "[直接]"
-                    return "$label (exit=${p.exitValue()}):\n$out"
-                }
-                if (exitOk && err.isBlank()) return "(logcat 无匹配日志)"
-                // 继续尝试下一个命令
-            } catch (_: Exception) {}
+        val direct = RootExec.execDirect("logcat", "-d", "-s", "opIconChanger:*", "-t", "100")
+        if (direct.stdout.isNotBlank()) return "[直接] (exit=${direct.exitCode}):\n${direct.stdout}"
+        if (direct.exitCode == 0 && direct.stderr.isBlank()) return "(logcat 无匹配日志)"
+        // 需要 root
+        val root = RootExec.exec("logcat -d -s opIconChanger:* -t 100")
+        return if (root.stdout.isNotBlank()) {
+            "[Root] (exit=${root.exitCode}):\n${root.stdout}"
+        } else {
+            "(logcat 读取失败 — 所有方式均不可用)"
         }
-        return "(logcat 读取失败 — 所有方式均不可用)"
     }
 
     data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable, val isSystem: Boolean)
