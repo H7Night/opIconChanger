@@ -132,9 +132,14 @@ public static final String CHOOSE_ICON_PACK_NAME = "chosse_icon_pack_name";
 
 ```bash
 ./gradlew.bat assembleDebug        # debug（无 minify，快）
-./gradlew.bat assembleRelease      # release（用 keystore/debug.jks 签名）
+./gradlew.bat assembleRelease      # release（无 keystore 时产出未签名 app-release-unsigned.apk）
 # 输出: app/build/outputs/apk/debug/app-debug.apk 或 .../release/app-release.apk
 ```
+
+**Release 签名机制**：`keystore/release.jks`（别名 `opiconchanger`）与密码 `keystore/keystore.pass` 均已被 gitignore，不落库。
+签名凭据通过环境变量注入：`RELEASE_KEYSTORE_FILE` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS`。
+- 本地：`scripts/build*.sh/.bat/.ps1` 自动读取 `keystore/release.jks` + `keystore/keystore.pass` 注入环境变量 → 产出已签名 `app-release.apk`
+- CI：`RELEASE_KEYSTORE_B64` / `RELEASE_KEYSTORE_PASS` / `RELEASE_KEYSTORE_ALIAS` 存于 GitHub Secrets，`release.yml` 解码后注入
 
 ### 方式 2：scripts/ 脚本（推荐）
 

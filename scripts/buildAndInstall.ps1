@@ -24,6 +24,21 @@ $env:JAVA_HOME = if (Test-Path "$env:USERPROFILE\Abandon\Application\scoop\apps\
     "$env:USERPROFILE\Abandon\Application\scoop\apps\openjdk17\current"
 } elseif ($env:JAVA_HOME) { $env:JAVA_HOME } else { $null }
 
+# --- Release 签名（自动注入签名环境变量） ---
+$env:RELEASE_KEYSTORE_FILE = $null
+$env:RELEASE_KEYSTORE_PASS = $null
+$env:RELEASE_KEYSTORE_ALIAS = $null
+$keystoreFile = Join-Path $projectRoot "keystore\release.jks"
+$keystorePassFile = Join-Path $projectRoot "keystore\keystore.pass"
+if ((Test-Path $keystoreFile) -and (Test-Path $keystorePassFile)) {
+    $env:RELEASE_KEYSTORE_FILE = $keystoreFile
+    $env:RELEASE_KEYSTORE_PASS = (Get-Content $keystorePassFile -Raw).Trim()
+    $env:RELEASE_KEYSTORE_ALIAS = "opiconchanger"
+    Write-Host "[SIGN] Release 签名已启用 (keystore/release.jks)" -ForegroundColor Green
+} else {
+    Write-Host "[WARN] 未找到 keystore/release.jks 或 keystore/keystore.pass，构建未签名 APK" -ForegroundColor Yellow
+}
+
 # --- Build ---
 Write-Host "[1/2] Assembling release APK..." -ForegroundColor Yellow
 & $gradlew assembleRelease

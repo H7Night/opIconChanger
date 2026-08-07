@@ -2,9 +2,10 @@
 .SYNOPSIS
     opIconChanger 一键构建脚本
 .DESCRIPTION
-    清理 → 编译 release APK → 输出到 app/build/outputs/apk/release/
+    清理 → 编译 release APK（自动签名）→ 输出到 app/build/outputs/apk/release/
 .NOTES
-    签名配置: keystore/debug.jks (alias: opiconchanger, storepass: android)
+    签名配置: keystore/release.jks + keystore/keystore.pass (alias: opiconchanger)
+    缺文件时构建未签名 APK（app-release-unsigned.apk）
 #>
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +24,21 @@ if (-not (Test-Path $gradlew)) {
     Write-Host "[ERROR] gradlew.bat not found!" -ForegroundColor Red
     Write-Host "Please open this project in Android Studio first to generate the Gradle wrapper."
     exit 1
+}
+
+# --- Release 签名（自动注入签名环境变量） ---
+$env:RELEASE_KEYSTORE_FILE = $null
+$env:RELEASE_KEYSTORE_PASS = $null
+$env:RELEASE_KEYSTORE_ALIAS = $null
+$keystoreFile = Join-Path $projectRoot "keystore\release.jks"
+$keystorePassFile = Join-Path $projectRoot "keystore\keystore.pass"
+if ((Test-Path $keystoreFile) -and (Test-Path $keystorePassFile)) {
+    $env:RELEASE_KEYSTORE_FILE = $keystoreFile
+    $env:RELEASE_KEYSTORE_PASS = (Get-Content $keystorePassFile -Raw).Trim()
+    $env:RELEASE_KEYSTORE_ALIAS = "opiconchanger"
+    Write-Host "[SIGN] Release 签名已启用 (keystore/release.jks)" -ForegroundColor Green
+} else {
+    Write-Host "[WARN] 未找到 keystore/release.jks 或 keystore/keystore.pass，构建未签名 APK" -ForegroundColor Yellow
 }
 
 Write-Host "[1/3] Cleaning previous build..." -ForegroundColor Yellow

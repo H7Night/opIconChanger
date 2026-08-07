@@ -5,7 +5,7 @@ plugins {
 }
 
 // release 签名密钥不落库：
-// - 本地只构建 debug（AGP 默认使用 ~/.android/debug.keystore，开发者自行签名）
+// - 本地：scripts/build*.sh/.bat/.ps1 自动读取 keystore/release.jks + keystore/keystore.pass 并注入环境变量
 // - CI（GitHub Actions）先解码 Secrets 到文件，再注入 RELEASE_KEYSTORE_FILE / RELEASE_KEYSTORE_PASS / RELEASE_KEYSTORE_ALIAS
 // 未提供密钥时 release 构建不签名（由发布方自行处理），保证仓库内无密钥依赖。
 val releaseKeystoreFile: String? = System.getenv("RELEASE_KEYSTORE_FILE") ?: project.findProperty("RELEASE_KEYSTORE_FILE") as String?
