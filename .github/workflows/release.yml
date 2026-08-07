@@ -30,8 +30,22 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Install Android SDK platform 37
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37"
+      - name: Alias Android SDK platform 37.0 as 37
+        run: |
+          SDK="$ANDROID_HOME"
+          if [ ! -d "$SDK/platforms/android-37.0" ]; then
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0"
+          fi
+          rm -rf "$SDK/platforms/android-37"
+          cp -r "$SDK/platforms/android-37.0" "$SDK/platforms/android-37"
+          printf '%s\n' \
+            'AndroidVersion.ApiLevel=37' \
+            'Pkg.Id=platforms;android-37' \
+            'Pkg.Path=platforms;android-37' \
+            'Pkg.Desc=Android SDK Platform 37' \
+            'Pkg.DisplayName=Android SDK Platform 37' \
+            > "$SDK/platforms/android-37/source.properties"
+          cat "$SDK/platforms/android-37/source.properties"
 
       - name: Decode release keystore
         env:
