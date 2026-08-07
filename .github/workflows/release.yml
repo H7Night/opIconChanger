@@ -28,7 +28,7 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-37" >/dev/null
+          "$SDKMANAGER" "platforms;android-37"
 
       - name: Validate release secrets present
         run: |
