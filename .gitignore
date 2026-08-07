@@ -19,6 +19,10 @@ Thumbs.db
 # AI
 .antigravitycli/
 reasonix.toml
+AGENTS.md
+
+# Local personal environment (not uploaded to repo)
+docs/superpowers/
 
 # Keystore (exclude all — release key stays local / in CI Secrets)
 keystore/
@@ -27,3 +31,5 @@ keystore/*.base64
 
 # Decompiled
 analyze/
+
+
