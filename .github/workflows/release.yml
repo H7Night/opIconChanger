@@ -28,8 +28,17 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platforms;android-37.0"
-          ln -sfn "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
+          "$SDKMANAGER" "platforms;android-37.0" >/dev/null
+          mkdir -p "$ANDROID_HOME/platforms/android-37"
+          cp -r "$ANDROID_HOME/platforms/android-37.0/." "$ANDROID_HOME/platforms/android-37/"
+          cat > "$ANDROID_HOME/platforms/android-37/source.properties" <<'EOF'
+AndroidVersion.ApiLevel=37
+Pkg.Desc=Android SDK Platform 37
+Pkg.DisplayName=Android SDK Platform 37
+Pkg.Id=platforms;android-37
+Pkg.Path=platforms;android-37
+Pkg.Revision=1
+EOF
 
       - name: Validate release secrets present
         run: |
