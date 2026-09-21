@@ -56,12 +56,29 @@ object MainHook : IYukiHookXposedInit {
             val pid = android.os.Process.myPid()
             diag("onHook PID=$pid PROC=${appInfo.packageName}")
 
-            // Hook Activity.onResume 检测请求文件
+            // Hook Activity.onResume 检测请求文件（部分 Activity 生效）
             "android.app.Activity".toClass().resolve().apply {
                 firstMethod { name = "onResume" }.hook {
                     after {
                         processPendingRequest(instance<Activity>())
                     }
+                }
+            }
+
+            // Hook 桌面主 Activity onResume — 关键：Activity 基类的 onResume 钩子在该 ROM 上
+            // 不会拦截桌面 Activity 重写后的 onResume，只有直接挂具体桌面 Activity 才可靠
+            // （冷启动 / force-stop 重启 / 返回桌面均触发）
+            for (launcherCls in listOf("com.android.launcher.Launcher", "com.android.launcher3.Launcher")) {
+                try {
+                    launcherCls.toClass().resolve()
+                        .firstMethod { name = "onResume" }.hook {
+                            after {
+                                processPendingRequest(instance<Activity>())
+                            }
+                        }
+                    diag("✅ $launcherCls.onResume Hook 注册成功")
+                } catch (e: Exception) {
+                    diag("⚠️ $launcherCls.onResume Hook 跳过: ${e.message}")
                 }
             }
 
@@ -115,26 +132,23 @@ object MainHook : IYukiHookXposedInit {
      * 2. 请求文件内容不得超过上限，防止伪造超大文件拖垮 Launcher 进程；
      * 3. 处理串行化 + 去重，避免重复执行 saveEditDrawableToDir / 广播刷新。
      */
-    private fun processPendingRequest(context: Activity) {
+    private fun processPendingRequest(context: Context) {
         val file = locateOwnRequestFile(context) ?: return
         if (file.length() > MAX_REQUEST_BYTES) {
             diag("⚠️ 请求文件超限(${file.length()}B)，忽略并删除")
             file.delete()
             return
         }
-        diag("🎯 发现请求文件: ${file.path} (${file.length()}B)")
 
         requestExecutor.execute {
             try {
                 val json = file.readText()
                 val key = "${file.lastModified()}:${file.length()}"
                 synchronized(processedRequests) {
-                    if (processedRequests[file.path] == key) {
-                        diag("  请求已处理过，跳过: ${file.path}")
-                        return@execute
-                    }
+                    if (processedRequests[file.path] == key) return@execute
                     processedRequests[file.path] = key
                 }
+                diag("🎯 处理请求文件: ${file.path} (${file.length()}B)")
 
                 val req = IconRequest.fromJson(json)
                     ?: run { diag("  ❌ JSON 解析/校验失败"); file.delete(); return@execute }
@@ -163,7 +177,7 @@ object MainHook : IYukiHookXposedInit {
         }
     }
 
-    private fun applyOne(context: Activity, item: IconAction): Boolean {
+    private fun applyOne(context: Context, item: IconAction): Boolean {
         return try {
             val pm = context.packageManager
             if (!isPackageInstalled(pm, item.iconPackPkg!!)) {
@@ -199,7 +213,7 @@ object MainHook : IYukiHookXposedInit {
         }
     }
 
-    private fun restoreOne(context: Activity, pkg: String): Boolean {
+    private fun restoreOne(context: Context, pkg: String): Boolean {
         try {
             val clazz = findUxFileUtilsClass(context)
             if (clazz != null) {
@@ -246,10 +260,7 @@ object MainHook : IYukiHookXposedInit {
             return null
         }
         val fallback = File(IconPaths.REQUEST_FILE_ROOT)
-        if (fallback.exists()) {
-            diag("⚠️ 使用 root 通道请求文件: ${fallback.path}")
-            return fallback
-        }
+        if (fallback.exists()) return fallback
         return null
     }
 

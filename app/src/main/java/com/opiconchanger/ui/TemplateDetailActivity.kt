@@ -7,9 +7,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,6 +23,7 @@ import com.opiconchanger.iconpack.IconPackParser
 import com.opiconchanger.model.IconRequest
 import com.opiconchanger.utils.IconApplier
 import com.opiconchanger.utils.IconRequestWriter
+import com.opiconchanger.utils.RestartUtils
 import com.opiconchanger.utils.TemplateEntry
 import com.opiconchanger.utils.TemplateStore
 import kotlinx.coroutines.Dispatchers
@@ -133,27 +137,64 @@ class TemplateDetailActivity : AppCompatActivity() {
     private fun applySelected() {
         if (selected.isEmpty()) return
         val chosen = rows.filter { it.installed && it.entry.pkg in selected }.map { it.entry }
+        val dialog = showApplying()
         lifecycleScope.launch {
-            val directFailed = chosen.filterNot {
-                IconApplier.applyIcon(applicationContext, it.pkg, it.iconPackPkg, it.drawableResName)
-            }
-            val request = IconRequest(
-                com.opiconchanger.model.RequestAction.APPLY,
-                chosen.map {
-                    com.opiconchanger.model.IconAction(it.pkg, it.iconPackPkg, it.drawableResName)
+            var ok = 0
+            var skip = 0
+            try {
+                val directFailed = chosen.filterNot {
+                    IconApplier.applyIcon(applicationContext, it.pkg, it.iconPackPkg, it.drawableResName)
                 }
-            )
-            val sent = if (request.items.isNotEmpty()) {
-                IconRequestWriter.send(applicationContext, request)
-            } else false
-            val skip = if (sent) 0 else directFailed.size
-            val ok = chosen.size - skip
+                val request = IconRequest(
+                    com.opiconchanger.model.RequestAction.APPLY,
+                    chosen.map {
+                        com.opiconchanger.model.IconAction(it.pkg, it.iconPackPkg, it.drawableResName)
+                    }
+                )
+                val sent = if (request.items.isNotEmpty()) {
+                    IconRequestWriter.send(applicationContext, request)
+                } else false
+                skip = if (sent) 0 else directFailed.size
+                ok = chosen.size - skip
+            } finally {
+                dialog.dismiss()
+            }
             Toast.makeText(
                 this@TemplateDetailActivity,
                 getString(R.string.apply_result, ok, skip),
                 Toast.LENGTH_LONG
             ).show()
+            // 与一键还原一致：调用系统方法重启桌面，让修改立即生效
+            withContext(Dispatchers.IO) {
+                RestartUtils.restartLauncher(applicationContext)
+            }
         }
+    }
+
+    private fun showApplying(): AlertDialog {
+        val pad = (resources.displayMetrics.density * 20).toInt()
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(pad, pad / 2, pad, pad / 2)
+            addView(ProgressBar(this@TemplateDetailActivity), LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+            addView(TextView(this@TemplateDetailActivity).apply {
+                text = getString(R.string.template_applying)
+                setPadding(pad / 2, 0, 0, 0)
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        return AlertDialog.Builder(this)
+            .setTitle(R.string.template_apply)
+            .setView(row)
+            .setCancelable(false)
+            .create()
+            .also { it.show() }
     }
 
     private fun showMenu(anchor: View) {

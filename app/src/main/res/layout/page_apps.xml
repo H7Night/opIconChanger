@@ -97,6 +97,14 @@
         android:singleLine="true"
         android:inputType="textFilter" />
 
+    <CheckBox
+        android:id="@+id/cbSelectAll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:text="@string/app_select_all" />
+
     <TextView
         android:id="@+id/tvEmpty"
         android:layout_width="match_parent"

@@ -71,6 +71,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etSearch: EditText
     private lateinit var rvApps: RecyclerView
     private lateinit var tvEmpty: TextView
+    private lateinit var cbSelectAll: CheckBox
+    private var currentFiltered: List<AppEntry> = emptyList()
     private lateinit var tvLog: TextView
     private lateinit var etLogKeyword: EditText
     private lateinit var tvLineCount: TextView
@@ -137,6 +139,8 @@ class MainActivity : AppCompatActivity() {
         rvApps = pageApps.findViewById(R.id.recyclerView)
         tvEmpty = pageApps.findViewById(R.id.tvEmpty)
         rvApps.layoutManager = LinearLayoutManager(this)
+        cbSelectAll = pageApps.findViewById(R.id.cbSelectAll)
+        cbSelectAll.setOnCheckedChangeListener(newSelectAllListener())
         pageApps.findViewById<View>(R.id.btnAppsMenu).setOnClickListener { showAppsMenu(it) }
 
         rvTemplates = pageTemplates.findViewById(R.id.rvTemplates)
@@ -377,6 +381,8 @@ class MainActivity : AppCompatActivity() {
                     selectedPackages.clear()
                     reloadCustomizedSet()
                 }
+                // 与应用图标一致：调用系统方法重启桌面，让还原立即生效
+                RestartUtils.restartLauncher(applicationContext)
             }
         }
     }
@@ -455,6 +461,7 @@ class MainActivity : AppCompatActivity() {
             if (query.isBlank()) list
             else list.filter { it.label.contains(query, true) || it.pkg.contains(query, true) }
         }
+        currentFiltered = filtered
         appAdapter?.submitList(filtered)
         tvEmpty.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
         rvApps.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
@@ -465,7 +472,24 @@ class MainActivity : AppCompatActivity() {
                 else -> getString(R.string.app_list_empty)
             }
         }
+        syncSelectAll()
     }
+
+    /** 同步「全选」勾选态：当前筛选结果非空且已全部选中时勾选。 */
+    private fun syncSelectAll() {
+        cbSelectAll.setOnCheckedChangeListener(null)
+        cbSelectAll.isChecked = currentFiltered.isNotEmpty() &&
+            currentFiltered.all { it.pkg in selectedPackages }
+        cbSelectAll.setOnCheckedChangeListener(newSelectAllListener())
+    }
+
+    private fun newSelectAllListener() =
+        android.widget.CompoundButton.OnCheckedChangeListener { _, checked ->
+            val pkgs = currentFiltered.map { it.pkg }
+            if (checked) selectedPackages.addAll(pkgs)
+            else selectedPackages.removeAll(pkgs.toSet())
+            appAdapter?.notifyDataSetChanged()
+        }
 
     private fun filterListForCurrentFilter(list: List<AppEntry>): List<AppEntry> =
         list.filter {
@@ -664,6 +688,7 @@ class MainActivity : AppCompatActivity() {
                 cb.isChecked = e.pkg in selectedPackages
                 cb.setOnCheckedChangeListener { _, checked ->
                     if (checked) selectedPackages.add(e.pkg) else selectedPackages.remove(e.pkg)
+                    syncSelectAll()
                 }
                 itemView.setOnClickListener { onClick(e) }
             }

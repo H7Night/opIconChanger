@@ -52,6 +52,7 @@
     <string name="app_list_loading">正在加载应用列表…</string>
     <string name="app_icon_change">更换图标</string>
     <string name="app_icon_changed">图标已更换，重启桌面生效</string>
+    <string name="app_select_all">全选</string>
 
     <!-- App 列表筛选 -->
     <string name="app_filter_all">全部</string>
@@ -93,6 +94,7 @@
     <string name="restore_none">没有需要还原的手动图标</string>
     <string name="restore_done">已还原 %1$d 个应用</string>
     <string name="apply_result">成功 %1$d 个 / 跳过 %2$d 个</string>
+    <string name="template_applying">正在应用…</string>
     <string name="btn_confirm">确定</string>
     <string name="btn_cancel">取消</string>
 </resources>
