@@ -42,4 +42,11 @@ class AppFilterPredicatesTest {
     fun unadaptedMatchesWhenNeitherAdaptedNorCustomized() {
         assertTrue(AppFilterPredicates.matches(userApp, AppFilter.UNADAPTED, emptySet(), emptySet()))
     }
+
+    @Test
+    fun customizedMatchesOnlyCustomizedPackage() {
+        val customized = setOf("com.example.app")
+        assertTrue(AppFilterPredicates.matches(userApp, AppFilter.CUSTOMIZED, emptySet(), customized))
+        assertFalse(AppFilterPredicates.matches(systemApp, AppFilter.CUSTOMIZED, emptySet(), customized))
+    }
 }

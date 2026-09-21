@@ -58,6 +58,8 @@
     <string name="app_filter_system">系统应用</string>
     <string name="app_filter_user">用户应用</string>
     <string name="app_filter_unadapted">无适配应用</string>
+    <string name="app_filter_customized">已手动更换</string>
+    <string name="app_list_no_customized">还没有手动更换过图标的应用</string>
     <string name="app_list_all_adapted">当前图标包已适配全部应用</string>
 
     <string-array name="app_filter_options">
@@ -65,5 +67,6 @@
         <item>@string/app_filter_system</item>
         <item>@string/app_filter_user</item>
         <item>@string/app_filter_unadapted</item>
+        <item>@string/app_filter_customized</item>
     </string-array>
 </resources>

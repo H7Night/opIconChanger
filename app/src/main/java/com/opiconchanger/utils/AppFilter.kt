@@ -1,6 +1,6 @@
 package com.opiconchanger.utils
 
-enum class AppFilter { ALL, SYSTEM, USER, UNADAPTED }
+enum class AppFilter { ALL, SYSTEM, USER, UNADAPTED, CUSTOMIZED }
 
 data class FilterableApp(val pkg: String, val isSystem: Boolean)
 
@@ -16,5 +16,6 @@ object AppFilterPredicates {
         AppFilter.USER -> !app.isSystem
         AppFilter.UNADAPTED ->
             app.pkg !in adaptedPackages && app.pkg !in customizedPackages
+        AppFilter.CUSTOMIZED -> app.pkg in customizedPackages
     }
 }
