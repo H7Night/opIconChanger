@@ -9,7 +9,9 @@ import com.highcapable.yukihookapi.hook.factory.configs
 import com.highcapable.yukihookapi.hook.factory.encase
 import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
 import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.opiconchanger.model.IconAction
 import com.opiconchanger.model.IconRequest
+import com.opiconchanger.model.RequestAction
 import com.opiconchanger.utils.IconPaths
 import com.opiconchanger.utils.LogUtils
 import java.io.File
@@ -25,7 +27,7 @@ object MainHook : IYukiHookXposedInit {
 
     const val LAUNCHER_PACKAGE = IconPaths.LAUNCHER_PACKAGE
 
-    private const val MAX_REQUEST_BYTES = 8 * 1024
+    private const val MAX_REQUEST_BYTES = 256 * 1024
     private val hookDiagFile = File(IconPaths.DIAG_FILE)
 
     // 串行处理请求：单个 worker 线程，避免并发重复处理同一请求文件
@@ -137,56 +139,21 @@ object MainHook : IYukiHookXposedInit {
                 val req = IconRequest.fromJson(json)
                     ?: run { diag("  ❌ JSON 解析/校验失败"); file.delete(); return@execute }
 
-                diag("  解析: target=${req.targetPkg} iconPack=${req.iconPackPkg} drawable=${req.drawableResName}")
+                diag("  批量请求: action=${req.action} items=${req.items.size}")
 
-                // 1. 加载 IconPack drawable（包存在性已在 fromJson 校验）
-                val pm = context.packageManager
-                if (!isPackageInstalled(pm, req.iconPackPkg)) {
-                    diag("  ❌ iconPack 未安装: ${req.iconPackPkg}")
-                    file.delete(); return@execute
+                var ok = 0
+                var skip = 0
+                val touched = ArrayList<String>()
+                when (req.action) {
+                    RequestAction.APPLY -> req.items.forEach { item ->
+                        if (applyOne(context, item)) { ok++; touched.add(item.targetPkg) } else skip++
+                    }
+                    RequestAction.RESTORE -> req.items.forEach { item ->
+                        if (restoreOne(context, item.targetPkg)) { ok++; touched.add(item.targetPkg) } else skip++
+                    }
                 }
-                if (!isPackageInstalled(pm, req.targetPkg)) {
-                    diag("  ❌ target 未安装: ${req.targetPkg}")
-                    file.delete(); return@execute
-                }
-                val iconRes = pm.getResourcesForApplication(req.iconPackPkg)
-                val resId = iconRes.getIdentifier(req.drawableResName, "drawable", req.iconPackPkg)
-                if (resId == 0) { diag("  ❌ drawable 不存在: ${req.drawableResName}"); file.delete(); return@execute }
-                val drawable = iconRes.getDrawable(resId, null)
-                    ?: run { diag("  ❌ getDrawable=null"); file.delete(); return@execute }
-                diag("  drawable 已加载 (${drawable.intrinsicWidth}x${drawable.intrinsicHeight})")
-
-                // 2. 反射调用 UxFileUtils
-                val uxClassName = "com.oplus.uxicon.ui.util.UxFileUtils"
-                var clazz: Class<*>? = null
-                for (cl in listOfNotNull(
-                    context.classLoader, Activity::class.java.classLoader,
-                    ClassLoader.getSystemClassLoader()
-                ).distinct()) {
-                    try { clazz = cl.loadClass(uxClassName); break } catch (_: Exception) {}
-                }
-                if (clazz == null) { diag("  ❌ UxFileUtils 类未找到"); file.delete(); return@execute }
-                diag("  UxFileUtils 已加载 via ${clazz.classLoader?.javaClass?.simpleName}")
-
-                val method = clazz.getMethod(
-                    "saveEditDrawableToDir",
-                    android.graphics.drawable.Drawable::class.java,
-                    String::class.java, String::class.java, String::class.java
-                )
-                val ok = method.invoke(
-                    null, drawable, req.targetPkg, req.iconPackPkg, req.drawableResName
-                ) as? Boolean ?: false
-
-                if (ok) {
-                    diag("  ✅ 保存成功!")
-                    val png = File(IconPaths.UX_ICON_DIR, "${req.targetPkg}.png")
-                    val cfg = File(IconPaths.UX_ICON_DIR, "${req.targetPkg}.cfg")
-                    diag("  PNG: ${png.exists()} ${png.length()}B")
-                    diag("  CFG: ${cfg.exists()} ${if(cfg.exists())cfg.readText().take(200) else "无"}")
-                    triggerIconRefresh(context, req.targetPkg)
-                } else {
-                    diag("  ❌ saveEditDrawableToDir 返回 false")
-                }
+                diag("  批量处理完成: 成功=$ok 跳过=$skip")
+                if (touched.isNotEmpty()) triggerIconRefresh(context, touched)
             } catch (e: Exception) {
                 diag("  ❌ 异常: ${e.javaClass.simpleName}: ${e.message}")
                 Log.e("opIconChanger", "processPendingRequest 异常", e)
@@ -194,6 +161,73 @@ object MainHook : IYukiHookXposedInit {
                 file.delete()
             }
         }
+    }
+
+    private fun applyOne(context: Activity, item: IconAction): Boolean {
+        return try {
+            val pm = context.packageManager
+            if (!isPackageInstalled(pm, item.iconPackPkg!!)) {
+                diag("  ❌ iconPack 未安装: ${item.iconPackPkg}")
+                return false
+            }
+            if (!isPackageInstalled(pm, item.targetPkg)) {
+                diag("  ❌ target 未安装: ${item.targetPkg}")
+                return false
+            }
+            val iconRes = pm.getResourcesForApplication(item.iconPackPkg)
+            val resId = iconRes.getIdentifier(item.drawableResName, "drawable", item.iconPackPkg)
+            if (resId == 0) { diag("  ❌ drawable 不存在: ${item.drawableResName}"); return false }
+            val drawable = iconRes.getDrawable(resId, null)
+                ?: run { diag("  ❌ getDrawable=null"); return false }
+            val clazz = findUxFileUtilsClass(context) ?: run {
+                diag("  ❌ UxFileUtils 类未找到"); return false
+            }
+            val method = clazz.getMethod(
+                "saveEditDrawableToDir",
+                android.graphics.drawable.Drawable::class.java,
+                String::class.java, String::class.java, String::class.java
+            )
+            val success = method.invoke(
+                null, drawable, item.targetPkg, item.iconPackPkg, item.drawableResName
+            ) as? Boolean ?: false
+            if (success) diag("  ✅ apply: ${item.targetPkg} → ${item.drawableResName}")
+            else diag("  ❌ saveEditDrawableToDir 返回 false: ${item.targetPkg}")
+            success
+        } catch (e: Exception) {
+            diag("  ❌ apply 异常 [${item.targetPkg}]: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    private fun restoreOne(context: Activity, pkg: String): Boolean {
+        try {
+            val clazz = findUxFileUtilsClass(context)
+            if (clazz != null) {
+                val m = clazz.getMethod("deleteEditDrawable", String::class.java)
+                val r = m.invoke(null, pkg) as? Boolean ?: false
+                if (r) { diag("  ✅ restore(反射): $pkg"); return true }
+            }
+        } catch (e: Exception) {
+            diag("  ⚠️ restore 反射失败 [$pkg]: ${e.message}，回退直接删除")
+        }
+        val cfg = File(IconPaths.UX_ICON_DIR, "$pkg.cfg")
+        val png = File(IconPaths.UX_ICON_DIR, "$pkg.png")
+        val cfgOk = if (cfg.exists()) cfg.delete() else true
+        val pngOk = if (png.exists()) png.delete() else true
+        val success = cfgOk && pngOk
+        diag(if (success) "  ✅ restore(直接删除): $pkg" else "  ❌ restore 失败: $pkg")
+        return success
+    }
+
+    private fun findUxFileUtilsClass(context: Context): Class<*>? {
+        val name = "com.oplus.uxicon.ui.util.UxFileUtils"
+        for (cl in listOfNotNull(
+            context.classLoader, Activity::class.java.classLoader,
+            ClassLoader.getSystemClassLoader()
+        ).distinct()) {
+            try { return cl.loadClass(name) } catch (_: Exception) {}
+        }
+        return null
     }
 
     /**
@@ -233,7 +267,7 @@ object MainHook : IYukiHookXposedInit {
         pm.getPackageInfo(pkg, 0); true
     } catch (_: PackageManager.NameNotFoundException) { false }
 
-    private fun triggerIconRefresh(context: Context, pkg: String) {
+    private fun triggerIconRefresh(context: Context, pkgs: List<String>) {
         val action = "com.oplus.uxdesign.action.ICON_UPDATED"
         val extra = "android.intent.extra.PACKAGES"
         try {
@@ -244,17 +278,17 @@ object MainHook : IYukiHookXposedInit {
             val model = appStateCls.getMethod("getModel").invoke(appState)
                 ?: run { diag("  ⚠️ model 为空，跳过刷新"); return }
             val intent = android.content.Intent(action)
-            intent.putStringArrayListExtra(extra, arrayListOf(pkg))
+            intent.putStringArrayListExtra(extra, ArrayList(pkgs))
             model.javaClass.getMethod("onBroadcastIntent", android.content.Intent::class.java)
                 .invoke(model, intent)
-            diag("  ✅ 已触发桌面刷新 (onBroadcastIntent): $pkg")
+            diag("  ✅ 已触发桌面刷新 (onBroadcastIntent): ${pkgs.size} 个")
         } catch (e: Exception) {
             diag("  ❌ 反射刷新失败: ${e.message}")
             try {
                 val intent = android.content.Intent(action)
-                intent.putStringArrayListExtra(extra, arrayListOf(pkg))
+                intent.putStringArrayListExtra(extra, ArrayList(pkgs))
                 context.sendBroadcast(intent)
-                diag("  ✅ 已发送 ICON_UPDATED 广播兜底: $pkg")
+                diag("  ✅ 已发送 ICON_UPDATED 广播兜底: ${pkgs.size} 个")
             } catch (e2: Exception) {
                 diag("  ❌ 广播兜底失败: ${e2.message}")
             }

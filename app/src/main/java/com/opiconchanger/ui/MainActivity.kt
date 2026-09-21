@@ -344,7 +344,7 @@ class MainActivity : AppCompatActivity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("icon", drawable))
 
         CoroutineScope(Dispatchers.IO).launch {
-            val request = IconRequest(app.pkg, pack, drawable)
+            val request = IconRequest.apply(app.pkg, pack, drawable)
             val json = request.toJson()
 
             LogUtils.i("═══ 写入请求: ${app.label} → $drawable ═══")

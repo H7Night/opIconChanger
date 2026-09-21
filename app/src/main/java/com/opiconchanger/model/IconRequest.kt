@@ -1,63 +1,98 @@
 package com.opiconchanger.model
 
 import com.opiconchanger.utils.IconPaths
+import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * 跨进程图标请求 — opIconChanger UI 进程 → Launcher 进程
- *
- * UI 侧序列化为 JSON 写入共享文件，MainHook 侧在 Launcher 进程中读取并执行。
- *
- * 安全设计：fromJson 对三个字段做严格校验（见 [PACKAGE_RE]、[RESOURCE_RE]），
- * 拒绝路径穿越（/、\、..）与任意 shell 字符，防止伪造请求被 Launcher 特权进程执行。
- */
-data class IconRequest(
-    /** 目标应用包名（要替换图标的 App） */
+enum class RequestAction { APPLY, RESTORE }
+
+data class IconAction(
     val targetPkg: String,
-    /** Icon Pack 的包名 */
-    val iconPackPkg: String,
-    /** Icon Pack 中的 drawable 资源名 */
-    val drawableResName: String
+    val iconPackPkg: String? = null,
+    val drawableResName: String? = null
+)
+
+data class IconRequest(
+    val action: RequestAction,
+    val items: List<IconAction>
 ) {
     companion object {
-        /** Android 包名规则：字母/数字/下划线/点，段不能以数字开头，且不含 / \ 与空白 */
         private val PACKAGE_RE = Regex("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$")
-        /** drawable 资源名：字母/数字/下划线 */
         private val RESOURCE_RE = Regex("^[a-zA-Z0-9_]+$")
-        /** 包名最大长度（Android 单段 255，总长宽松限制防滥用） */
         private const val MAX_PACKAGE_LEN = 255
-        /** drawable 名最大长度 */
         private const val MAX_RESOURCE_LEN = 128
 
-        /** 请求文件路径（与 IconPaths 保持一致，Hook 侧与 UI 侧共用） */
+        const val MAX_ITEMS = 500
+
         const val REQUEST_FILE = IconPaths.REQUEST_FILE
         const val REQUEST_FILE_ROOT = IconPaths.REQUEST_FILE_ROOT
 
-        /** 包名合法性校验（用于拒绝伪造请求） */
         fun isValidPackageName(pkg: String): Boolean =
             pkg.isNotEmpty() && pkg.length <= MAX_PACKAGE_LEN && PACKAGE_RE.matches(pkg)
 
-        /** drawable 资源名合法性校验 */
         fun isValidResourceName(name: String): Boolean =
             name.isNotEmpty() && name.length <= MAX_RESOURCE_LEN && RESOURCE_RE.matches(name)
+
+        fun apply(targetPkg: String, iconPackPkg: String, drawableResName: String): IconRequest =
+            IconRequest(RequestAction.APPLY, listOf(IconAction(targetPkg, iconPackPkg, drawableResName)))
+
+        fun restore(pkgs: List<String>): IconRequest =
+            IconRequest(RequestAction.RESTORE, pkgs.map { IconAction(it) })
 
         fun fromJson(json: String): IconRequest? {
             return try {
                 val obj = JSONObject(json)
-                val targetPkg = obj.getString("targetPkg")
-                val iconPackPkg = obj.getString("iconPackPkg")
-                val drawableResName = obj.getString("drawableResName")
-                if (!isValidPackageName(targetPkg)) return null
-                if (!isValidPackageName(iconPackPkg)) return null
-                if (!isValidResourceName(drawableResName)) return null
-                IconRequest(targetPkg, iconPackPkg, drawableResName)
-            } catch (_: Exception) { null }
+                if (!obj.has("action") && !obj.has("items")) {
+                    val targetPkg = obj.getString("targetPkg")
+                    val iconPackPkg = obj.getString("iconPackPkg")
+                    val drawableResName = obj.getString("drawableResName")
+                    if (!isValidPackageName(targetPkg) ||
+                        !isValidPackageName(iconPackPkg) ||
+                        !isValidResourceName(drawableResName)
+                    ) null
+                    else IconRequest(RequestAction.APPLY, listOf(IconAction(targetPkg, iconPackPkg, drawableResName)))
+                } else {
+                    val action = when (obj.getString("action")) {
+                        "apply" -> RequestAction.APPLY
+                        "restore" -> RequestAction.RESTORE
+                        else -> return null
+                    }
+                    val arr = obj.optJSONArray("items") ?: return null
+                    if (arr.length() < 1 || arr.length() > MAX_ITEMS) return null
+                    val items = (0 until arr.length()).map { i ->
+                        val item = arr.getJSONObject(i)
+                        val targetPkg = item.getString("targetPkg")
+                        if (!isValidPackageName(targetPkg)) return null
+                        when (action) {
+                            RequestAction.APPLY -> {
+                                val pack = item.getString("iconPackPkg")
+                                val res = item.getString("drawableResName")
+                                if (!isValidPackageName(pack) || !isValidResourceName(res)) return null
+                                IconAction(targetPkg, pack, res)
+                            }
+                            RequestAction.RESTORE -> IconAction(targetPkg)
+                        }
+                    }
+                    IconRequest(action, items)
+                }
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
-    fun toJson(): String = JSONObject().apply {
-        put("targetPkg", targetPkg)
-        put("iconPackPkg", iconPackPkg)
-        put("drawableResName", drawableResName)
-    }.toString()
+    fun toJson(): String {
+        val arr = JSONArray()
+        for (item in items) {
+            val o = JSONObject().put("targetPkg", item.targetPkg)
+            item.iconPackPkg?.let { o.put("iconPackPkg", it) }
+            item.drawableResName?.let { o.put("drawableResName", it) }
+            arr.put(o)
+        }
+        return JSONObject()
+            .put("version", 1)
+            .put("action", if (action == RequestAction.APPLY) "apply" else "restore")
+            .put("items", arr)
+            .toString()
+    }
 }

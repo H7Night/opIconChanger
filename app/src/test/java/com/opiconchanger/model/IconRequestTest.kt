@@ -1,5 +1,6 @@
 package com.opiconchanger.model
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,18 +49,47 @@ class IconRequestTest {
     }
 
     @Test
-    fun fromJsonRejectsInvalidFields() {
-        assertTrue(IconRequest.fromJson("""{"targetPkg":"com.foo","iconPackPkg":"com.pack","drawableResName":"ic_foo"}""") != null)
-        assertFalse(IconRequest.fromJson("""{"targetPkg":"../evil","iconPackPkg":"com.pack","drawableResName":"ic_foo"}""") != null)
-        assertFalse(IconRequest.fromJson("""{"targetPkg":"com.foo","iconPackPkg":"com.pack","drawableResName":"../evil"}""") != null)
-        assertFalse(IconRequest.fromJson("not json") != null)
-        assertFalse(IconRequest.fromJson("""{"targetPkg":"com.foo"}""") != null)
+    fun applyRoundTrip() {
+        val req = IconRequest.apply("com.foo", "com.pack", "ic_foo")
+        assertEquals(req, IconRequest.fromJson(req.toJson()))
     }
 
     @Test
-    fun roundTripJson() {
-        val req = IconRequest("com.foo", "com.pack", "ic_foo")
-        val restored = IconRequest.fromJson(req.toJson())
-        assertTrue(restored == req)
+    fun restoreRoundTripKeepsOnlyPackages() {
+        val req = IconRequest.restore(listOf("com.a", "com.b"))
+        val restored = IconRequest.fromJson(req.toJson())!!
+        assertEquals(RequestAction.RESTORE, restored.action)
+        assertEquals(listOf("com.a", "com.b"), restored.items.map { it.targetPkg })
+    }
+
+    @Test
+    fun legacyFlatJsonParsesAsSingleApply() {
+        val legacy = """{"targetPkg":"com.foo","iconPackPkg":"com.pack","drawableResName":"ic_foo"}"""
+        val req = IconRequest.fromJson(legacy)!!
+        assertEquals(RequestAction.APPLY, req.action)
+        assertEquals(1, req.items.size)
+        assertEquals("com.foo", req.items[0].targetPkg)
+    }
+
+    @Test
+    fun rejectsEmptyOrTooManyItems() {
+        assertFalse(IconRequest.fromJson("""{"action":"apply","items":[]}""") != null)
+        val many = (0..IconRequest.MAX_ITEMS).joinToString(",") {
+            """{"targetPkg":"com.p$it","iconPackPkg":"com.pack","drawableResName":"ic"}"""
+        }
+        assertFalse(IconRequest.fromJson("""{"action":"apply","items":[$many]}""") != null)
+    }
+
+    @Test
+    fun rejectsUnknownAction() {
+        assertFalse(IconRequest.fromJson("""{"action":"delete","items":[{"targetPkg":"com.a"}]}""") != null)
+    }
+
+    @Test
+    fun rejectsInvalidItemFields() {
+        assertFalse(IconRequest.fromJson("""{"action":"apply","items":[{"targetPkg":"../evil","iconPackPkg":"com.pack","drawableResName":"ic"}]}""") != null)
+        assertFalse(IconRequest.fromJson("""{"action":"apply","items":[{"targetPkg":"com.a","iconPackPkg":"com.pack","drawableResName":"../evil"}]}""") != null)
+        assertFalse(IconRequest.fromJson("""{"action":"restore","items":[{"targetPkg":"../evil"}]}""") != null)
+        assertFalse(IconRequest.fromJson("not json") != null)
     }
 }
