@@ -1,6 +1,7 @@
 package com.opiconchanger.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,5 +42,17 @@ class TemplateStoreTest {
         val decoded = TemplateStore.decode(json)
         assertEquals(1, decoded.size)
         assertTrue(decoded[0].entries.isEmpty())
+    }
+
+    @Test
+    fun isValidTemplateNameRejectsBlank() {
+        assertFalse(TemplateStore.isValidTemplateName(""))
+        assertFalse(TemplateStore.isValidTemplateName("   "))
+    }
+
+    @Test
+    fun isValidTemplateNameAcceptsNonBlank() {
+        assertTrue(TemplateStore.isValidTemplateName("我的模板"))
+        assertTrue(TemplateStore.isValidTemplateName(" x "))
     }
 }

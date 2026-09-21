@@ -21,26 +21,40 @@ object TemplateStore {
 
     private fun file(context: Context) = File(context.filesDir, FILE_NAME)
 
+    internal fun isValidTemplateName(name: String): Boolean = name.trim().isNotEmpty()
+
+    private fun writeAll(context: Context, items: List<IconTemplate>) {
+        val target = file(context)
+        val tmp = File(target.parentFile, "$FILE_NAME.tmp")
+        tmp.writeText(encode(items))
+        if (!tmp.renameTo(target)) {
+            target.writeText(encode(items))
+            tmp.delete()
+        }
+    }
+
     fun list(context: Context): List<IconTemplate> =
         runCatching { decode(file(context).readText()) }.getOrDefault(emptyList())
 
     fun create(context: Context, name: String, entries: List<TemplateEntry>): IconTemplate {
+        if (!isValidTemplateName(name)) throw IllegalArgumentException("template name must not be blank")
         val template = IconTemplate(
             id = UUID.randomUUID().toString(),
             name = name.trim(),
             createdAt = System.currentTimeMillis(),
             entries = entries
         )
-        file(context).writeText(encode(list(context) + template))
+        writeAll(context, list(context) + template)
         return template
     }
 
     fun rename(context: Context, id: String, newName: String): Boolean {
+        if (!isValidTemplateName(newName)) return false
         val all = list(context).toMutableList()
         val idx = all.indexOfFirst { it.id == id }
         if (idx < 0) return false
         all[idx] = all[idx].copy(name = newName.trim())
-        file(context).writeText(encode(all))
+        writeAll(context, all)
         return true
     }
 
@@ -48,7 +62,7 @@ object TemplateStore {
         val all = list(context)
         val remaining = all.filterNot { it.id == id }
         if (remaining.size == all.size) return false
-        file(context).writeText(encode(remaining))
+        writeAll(context, remaining)
         return true
     }
 
