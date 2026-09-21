@@ -12,10 +12,11 @@ object IconConfigStore {
 
     suspend fun readConfig(pkg: String): IconConfig? = withContext(Dispatchers.IO) {
         if (!IconRequest.isValidPackageName(pkg)) return@withContext null
-        val path = "${IconPaths.UX_ICON_DIR}/$pkg.cfg"
-        val direct = runCatching { File(path).readText() }.getOrNull()
+        val file = File(IconPaths.UX_ICON_DIR, "$pkg.cfg")
+        val direct = runCatching { file.readText() }.getOrNull()
+        if (direct == null && !file.exists()) return@withContext null
         val text = direct ?: runCatching {
-            RootExec.exec("cat ${RootExec.shQuote(path)}").stdout
+            RootExec.exec("cat ${RootExec.shQuote(file.absolutePath)}").stdout
         }.getOrNull()
         parseCfg(text ?: return@withContext null)
     }
