@@ -134,13 +134,8 @@ class TemplateDetailActivity : AppCompatActivity() {
         if (selected.isEmpty()) return
         val chosen = rows.filter { it.installed && it.entry.pkg in selected }.map { it.entry }
         lifecycleScope.launch {
-            var ok = 0
-            var skip = 0
-            for (e in chosen) {
-                val direct = IconApplier.applyIcon(
-                    applicationContext, e.pkg, e.iconPackPkg, e.drawableResName
-                )
-                if (direct) ok++ else skip++
+            val directFailed = chosen.filterNot {
+                IconApplier.applyIcon(applicationContext, it.pkg, it.iconPackPkg, it.drawableResName)
             }
             val request = IconRequest(
                 com.opiconchanger.model.RequestAction.APPLY,
@@ -148,7 +143,11 @@ class TemplateDetailActivity : AppCompatActivity() {
                     com.opiconchanger.model.IconAction(it.pkg, it.iconPackPkg, it.drawableResName)
                 }
             )
-            if (request.items.isNotEmpty()) IconRequestWriter.send(applicationContext, request)
+            val sent = if (request.items.isNotEmpty()) {
+                IconRequestWriter.sendChunked(applicationContext, request)
+            } else false
+            val skip = if (sent) 0 else directFailed.size
+            val ok = chosen.size - skip
             Toast.makeText(
                 this@TemplateDetailActivity,
                 getString(R.string.apply_result, ok, skip),
@@ -203,6 +202,8 @@ class TemplateDetailActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
 
+        override fun onViewRecycled(holder: VH) { holder.cancelLoad() }
+
         override fun getItemCount() = items.size
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -211,11 +212,13 @@ class TemplateDetailActivity : AppCompatActivity() {
             private val tvLabel = v.findViewById<TextView>(R.id.tvLabel)
             private val tvPkg = v.findViewById<TextView>(R.id.tvPackage)
             private val btn = v.findViewById<View>(R.id.btnChange)
+            private var loadJob: kotlinx.coroutines.Job? = null
+
+            fun cancelLoad() { loadJob?.cancel(); loadJob = null }
 
             fun bind(row: Row) {
                 tvLabel.text = row.label
                 tvPkg.text = row.entry.pkg
-                iv.setImageDrawable(row.appIcon)
                 itemView.alpha = if (row.installed) 1f else 0.4f
                 btn.visibility = View.GONE
                 cb.isEnabled = row.installed
@@ -224,6 +227,12 @@ class TemplateDetailActivity : AppCompatActivity() {
                 cb.setOnCheckedChangeListener { _, checked ->
                     if (checked) selectedPkgs.add(row.entry.pkg) else selectedPkgs.remove(row.entry.pkg)
                     onToggle()
+                }
+                cancelLoad()
+                iv.setImageDrawable(row.appIcon)
+                loadJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    val bmp = iconParser.loadIconBitmap(row.entry.iconPackPkg, row.entry.drawableResName)
+                    if (bmp != null) iv.setImageBitmap(bmp) else iv.setImageDrawable(row.appIcon)
                 }
             }
         }
