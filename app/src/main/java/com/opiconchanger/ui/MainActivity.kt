@@ -16,12 +16,15 @@ import com.opiconchanger.utils.AppFilterPredicates
 import com.opiconchanger.utils.CustomIconStore
 import com.opiconchanger.utils.FilterableApp
 import com.opiconchanger.utils.IconApplier
+import com.opiconchanger.utils.IconConfigStore
 import com.opiconchanger.utils.IconPaths
+import com.opiconchanger.utils.IconRequestWriter
 import com.opiconchanger.utils.IconTemplate
 import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
 import com.opiconchanger.utils.RootExec
+import com.opiconchanger.utils.TemplateEntry
 import com.opiconchanger.utils.TemplateStore
 import android.view.LayoutInflater
 import android.view.View
@@ -48,7 +51,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -135,6 +137,7 @@ class MainActivity : AppCompatActivity() {
         rvApps = pageApps.findViewById(R.id.recyclerView)
         tvEmpty = pageApps.findViewById(R.id.tvEmpty)
         rvApps.layoutManager = LinearLayoutManager(this)
+        pageApps.findViewById<View>(R.id.btnAppsMenu).setOnClickListener { showAppsMenu(it) }
 
         rvTemplates = pageTemplates.findViewById(R.id.rvTemplates)
         tvTemplatesEmpty = pageTemplates.findViewById(R.id.tvTemplatesEmpty)
@@ -151,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         spinnerAppFilter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 appFilter = AppFilter.entries.getOrElse(pos) { AppFilter.ALL }
-                if (appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
+                if (appFilter == AppFilter.UNADAPTED || appFilter == AppFilter.CUSTOMIZED) reloadCustomizedSet()
                 else filterApps(etSearch.text?.toString() ?: "")
             }
             override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
@@ -289,6 +292,95 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showAppsMenu(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        popup.menuInflater.inflate(R.menu.menu_apps, popup.menu)
+        popup.menu.findItem(R.id.action_set_template).isEnabled = selectedPackages.isNotEmpty()
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_set_template -> { createTemplate(); true }
+                R.id.action_restore_all -> { restoreAll(); true }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun createTemplate() {
+        val pkgs = selectedPackages.toList()
+        if (pkgs.isEmpty()) {
+            Toast.makeText(this, R.string.template_no_entries, Toast.LENGTH_SHORT).show()
+            return
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            val configs = IconConfigStore.readConfigs(pkgs)
+            val entries = pkgs.mapNotNull { p ->
+                configs[p]?.let { TemplateEntry(p, it.iconPackPkg, it.drawableResName) }
+            }
+            withContext(Dispatchers.Main) {
+                if (entries.isEmpty()) {
+                    Toast.makeText(this@MainActivity, R.string.template_no_entries, Toast.LENGTH_SHORT).show()
+                    return@withContext
+                }
+                if (entries.size > IconRequest.MAX_ITEMS) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.template_too_many, IconRequest.MAX_ITEMS),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@withContext
+                }
+                val defaultName = getString(R.string.template_default_name, (templateAdapter?.itemCount ?: 0) + 1)
+                TemplateDialogs.promptName(
+                    this@MainActivity, getString(R.string.menu_set_template), defaultName
+                ) { name ->
+                    val created = runCatching { TemplateStore.create(this@MainActivity, name, entries) }
+                    if (created.isFailure) {
+                        Toast.makeText(this@MainActivity, getString(R.string.template_too_many, IconRequest.MAX_ITEMS), Toast.LENGTH_LONG).show()
+                        return@promptName
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.template_saved, entries.size),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    selectedPackages.clear()
+                    filterApps(etSearch.text?.toString() ?: "")
+                }
+            }
+        }
+    }
+
+    private fun restoreAll() {
+        TemplateDialogs.confirm(
+            this,
+            getString(R.string.restore_confirm_title),
+            getString(R.string.restore_confirm_message)
+        ) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val pkgs = CustomIconStore.customizedPackageSet().toList()
+                if (pkgs.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, R.string.restore_none, Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                var done = 0
+                for (p in pkgs) if (IconApplier.deleteIcon(applicationContext, p)) done++
+                IconRequestWriter.send(applicationContext, IconRequest.restore(pkgs))
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.restore_done, done),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    selectedPackages.clear()
+                    reloadCustomizedSet()
+                }
+            }
+        }
+    }
+
     private fun loadIconPacks() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -359,14 +451,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun filterApps(query: String) {
-        val filtered = allApps.filter {
-            AppFilterPredicates.matches(
-                FilterableApp(it.pkg, it.isSystem),
-                appFilter,
-                adaptedSet,
-                customizedSet
-            )
-        }.let { list ->
+        val filtered = filterListForCurrentFilter(allApps).let { list ->
             if (query.isBlank()) list
             else list.filter { it.label.contains(query, true) || it.pkg.contains(query, true) }
         }
@@ -374,11 +459,23 @@ class MainActivity : AppCompatActivity() {
         tvEmpty.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
         rvApps.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
         if (filtered.isEmpty()) {
-            tvEmpty.text = if (appFilter == AppFilter.UNADAPTED)
-                getString(R.string.app_list_all_adapted)
-            else getString(R.string.app_list_empty)
+            tvEmpty.text = when (appFilter) {
+                AppFilter.UNADAPTED -> getString(R.string.app_list_all_adapted)
+                AppFilter.CUSTOMIZED -> getString(R.string.app_list_no_customized)
+                else -> getString(R.string.app_list_empty)
+            }
         }
     }
+
+    private fun filterListForCurrentFilter(list: List<AppEntry>): List<AppEntry> =
+        list.filter {
+            AppFilterPredicates.matches(
+                FilterableApp(it.pkg, it.isSystem),
+                appFilter,
+                adaptedSet,
+                customizedSet
+            )
+        }
 
     private fun reloadAdaptedSet(pack: String) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -418,44 +515,12 @@ class MainActivity : AppCompatActivity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("icon", drawable))
 
         CoroutineScope(Dispatchers.IO).launch {
-            val request = IconRequest.apply(app.pkg, pack, drawable)
-            val json = request.toJson()
-
             LogUtils.i("═══ 写入请求: ${app.label} → $drawable ═══")
 
-            var success = false
-
-            // 路径 1: UX 图标目录（drwxrwxrwx，App 可直写；文件属主 = App UID，Launcher Hook 据此校验）
-            val primaryFile = File(IconPaths.REQUEST_FILE)
-            try {
-                primaryFile.parentFile?.mkdirs()
-                primaryFile.writeText(json)
-                primaryFile.setReadable(true, false)
-                LogUtils.i("  UX 目录请求文件写入成功: ${primaryFile.absolutePath} (${json.length}B)")
-                success = true
-            } catch (e: Exception) {
-                LogUtils.w("  UX 目录直写失败: ${e.message}")
-            }
-
-            // 路径 2: 用 su 写到 /data/local/tmp/（仅 root/shell 可写，作为兜底）
-            try {
-                val tmpPath = IconPaths.REQUEST_FILE_ROOT
-                val tmpFile = File(cacheDir, "opicon_req_tmp.json")
-                tmpFile.writeText(json)
-                tmpFile.setReadable(true, false)
-                val result = RootExec.exec(
-                    "cp ${RootExec.shQuote(tmpFile.absolutePath)} ${RootExec.shQuote(tmpPath)} && chmod 666 ${RootExec.shQuote(tmpPath)}"
-                )
-                if (result.succeeded) {
-                    LogUtils.i("  su → /data/local/tmp/ 成功")
-                    success = true
-                } else {
-                    LogUtils.w("  su cp 失败 exit=${result.exitCode} err=${result.stderr.trim()}")
-                }
-                tmpFile.delete()
-            } catch (e: Exception) {
-                LogUtils.w("  su 路径不可用: ${e.message}")
-            }
+            val request = IconRequest.apply(app.pkg, pack, drawable)
+            val sent = IconRequestWriter.send(applicationContext, request)
+            if (sent) LogUtils.i("  请求文件已写出")
+            var success = sent
 
             // 直接落盘 .png + .cfg，列表立即感知（无需等 Launcher onResume）
             val direct = IconApplier.applyIcon(applicationContext, app.pkg, pack, drawable)
