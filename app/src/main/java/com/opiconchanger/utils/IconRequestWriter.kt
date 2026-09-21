@@ -50,24 +50,4 @@ object IconRequestWriter {
 
     internal fun chunk(items: List<IconAction>, size: Int = CHUNK_SIZE): List<List<IconAction>> =
         if (items.isEmpty()) emptyList() else items.chunked(size)
-
-    suspend fun sendChunked(context: Context, request: IconRequest): Boolean {
-        val chunks = chunk(request.items)
-        var allOk = true
-        chunks.forEachIndexed { idx, items ->
-            allOk = send(context, request.copy(items = items)) && allOk
-            if (idx < chunks.size - 1) awaitRequestConsumed()
-        }
-        return allOk
-    }
-
-    private suspend fun awaitRequestConsumed(timeoutMs: Long = 5000) {
-        val primary = File(IconPaths.REQUEST_FILE)
-        val fallback = File(IconPaths.REQUEST_FILE_ROOT)
-        val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < timeoutMs) {
-            if (!primary.exists() && !fallback.exists()) return
-            kotlinx.coroutines.delay(200)
-        }
-    }
 }

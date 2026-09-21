@@ -84,6 +84,7 @@
     <string name="template_apply">应用选中</string>
     <string name="template_select_all">全选</string>
     <string name="template_name_empty">名称不能为空</string>
+    <string name="template_too_many">一个模板最多保存 %1$d 个应用，请减少选择后重试</string>
     <string name="template_saved">模板已保存：%1$d 个应用</string>
     <string name="template_no_entries">所选应用没有可保存的图标配置</string>
     <string name="template_app_uninstalled">未安装</string>

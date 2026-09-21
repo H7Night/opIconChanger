@@ -1,6 +1,7 @@
 package com.opiconchanger.utils
 
 import android.content.Context
+import com.opiconchanger.model.IconRequest
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -38,6 +39,8 @@ object TemplateStore {
 
     fun create(context: Context, name: String, entries: List<TemplateEntry>): IconTemplate {
         if (!isValidTemplateName(name)) throw IllegalArgumentException("template name must not be blank")
+        if (entries.size > IconRequest.MAX_ITEMS)
+            throw IllegalArgumentException("template entries exceed ${IconRequest.MAX_ITEMS}")
         val template = IconTemplate(
             id = UUID.randomUUID().toString(),
             name = name.trim(),

@@ -144,7 +144,7 @@ class TemplateDetailActivity : AppCompatActivity() {
                 }
             )
             val sent = if (request.items.isNotEmpty()) {
-                IconRequestWriter.sendChunked(applicationContext, request)
+                IconRequestWriter.send(applicationContext, request)
             } else false
             val skip = if (sent) 0 else directFailed.size
             val ok = chosen.size - skip
