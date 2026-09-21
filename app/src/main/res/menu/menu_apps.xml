@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_set_template"
+        android:title="@string/menu_set_template" />
+    <item
+        android:id="@+id/action_restore_all"
+        android:title="@string/menu_restore_all" />
+</menu>

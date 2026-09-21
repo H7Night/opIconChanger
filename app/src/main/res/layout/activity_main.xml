@@ -47,6 +47,34 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/tabTemplates"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tabTemplatesLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_templates"
+                android:textSize="13sp"
+                android:textColor="@color/on_surface_variant" />
+
+            <View
+                android:id="@+id/tabTemplatesIndicator"
+                android:layout_width="22dp"
+                android:layout_height="3dp"
+                android:layout_marginTop="5dp"
+                android:background="@drawable/bg_tab_indicator"
+                android:visibility="invisible" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/tabLog"
             android:layout_width="0dp"
             android:layout_height="match_parent"

@@ -69,4 +69,29 @@
         <item>@string/app_filter_unadapted</item>
         <item>@string/app_filter_customized</item>
     </string-array>
+
+    <!-- 模板与还原 -->
+    <string name="title_templates">模板</string>
+    <string name="menu_set_template">设为模板</string>
+    <string name="menu_restore_all">一键还原</string>
+    <string name="template_list_empty">还没有模板。在应用页勾选应用后，通过右上角菜单设为模板</string>
+    <string name="template_default_name">模板 %1$d</string>
+    <string name="template_app_count">%1$d 个应用</string>
+    <string name="template_created_at">创建于 %1$s</string>
+    <string name="template_rename">重命名</string>
+    <string name="template_delete">删除</string>
+    <string name="template_delete_confirm">确定删除模板「%1$s」？</string>
+    <string name="template_apply">应用选中</string>
+    <string name="template_select_all">全选</string>
+    <string name="template_name_empty">名称不能为空</string>
+    <string name="template_saved">模板已保存：%1$d 个应用</string>
+    <string name="template_no_entries">所选应用没有可保存的图标配置</string>
+    <string name="template_app_uninstalled">未安装</string>
+    <string name="restore_confirm_title">一键还原</string>
+    <string name="restore_confirm_message">将删除所有手动设置的图标并恢复为系统默认。\n\n此操作不可撤销，确定继续？</string>
+    <string name="restore_none">没有需要还原的手动图标</string>
+    <string name="restore_done">已还原 %1$d 个应用</string>
+    <string name="apply_result">成功 %1$d 个 / 跳过 %2$d 个</string>
+    <string name="btn_confirm">确定</string>
+    <string name="btn_cancel">取消</string>
 </resources>

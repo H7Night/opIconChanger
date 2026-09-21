@@ -17,17 +17,21 @@ import com.opiconchanger.utils.CustomIconStore
 import com.opiconchanger.utils.FilterableApp
 import com.opiconchanger.utils.IconApplier
 import com.opiconchanger.utils.IconPaths
+import com.opiconchanger.utils.IconTemplate
 import com.opiconchanger.utils.LogRenderer
 import com.opiconchanger.utils.LogUtils
 import com.opiconchanger.utils.RestartUtils
 import com.opiconchanger.utils.RootExec
+import com.opiconchanger.utils.TemplateStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
@@ -53,7 +57,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var pageApps: View
+    private lateinit var pageTemplates: View
     private lateinit var pageLog: View
+    private lateinit var rvTemplates: RecyclerView
+    private lateinit var tvTemplatesEmpty: TextView
+    private var templateAdapter: TemplateAdapter? = null
+    private var currentPage: Int = 0
+    private val selectedPackages: MutableSet<String> = mutableSetOf()
     private lateinit var spinnerIconPack: Spinner
     private lateinit var tvIconCount: TextView
     private lateinit var etSearch: EditText
@@ -107,16 +117,17 @@ class MainActivity : AppCompatActivity() {
 
         val container = findViewById<ViewGroup>(R.id.pageContainer)
         pageApps = layoutInflater.inflate(R.layout.page_apps, container, false)
+        pageTemplates = layoutInflater.inflate(R.layout.page_templates, container, false)
         pageLog = layoutInflater.inflate(R.layout.page_log, container, false)
         container.apply {
-            addView(pageApps); addView(pageLog)
+            addView(pageApps); addView(pageTemplates); addView(pageLog)
+            pageTemplates.visibility = View.GONE
             pageLog.visibility = View.GONE
         }
 
-        val tabApps = findViewById<View>(R.id.tabApps)
-        val tabLog = findViewById<View>(R.id.tabLog)
-        tabApps.setOnClickListener { showPage(0) }
-        tabLog.setOnClickListener { showPage(1) }
+        findViewById<View>(R.id.tabApps).setOnClickListener { showPage(0) }
+        findViewById<View>(R.id.tabTemplates).setOnClickListener { showPage(1) }
+        findViewById<View>(R.id.tabLog).setOnClickListener { showPage(2) }
 
         spinnerIconPack = pageApps.findViewById(R.id.spinnerIconPack)
         tvIconCount = pageApps.findViewById(R.id.tvIconCount)
@@ -124,6 +135,10 @@ class MainActivity : AppCompatActivity() {
         rvApps = pageApps.findViewById(R.id.recyclerView)
         tvEmpty = pageApps.findViewById(R.id.tvEmpty)
         rvApps.layoutManager = LinearLayoutManager(this)
+
+        rvTemplates = pageTemplates.findViewById(R.id.rvTemplates)
+        tvTemplatesEmpty = pageTemplates.findViewById(R.id.tvTemplatesEmpty)
+        rvTemplates.layoutManager = LinearLayoutManager(this)
 
         spinnerAppFilter = pageApps.findViewById(R.id.spinnerAppFilter)
         val filterAdapter = ArrayAdapter(
@@ -173,7 +188,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (appFilter == AppFilter.UNADAPTED) reloadCustomizedSet()
+        if (appFilter == AppFilter.UNADAPTED || appFilter == AppFilter.CUSTOMIZED) reloadCustomizedSet()
+        if (currentPage == 1) loadTemplates()
     }
 
     private fun detectLauncher() {
@@ -199,20 +215,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPage(idx: Int) {
-        pageApps.visibility = if (idx == 0) View.VISIBLE else View.GONE
-        pageLog.visibility = if (idx == 1) View.VISIBLE else View.GONE
-        // 底部 Tab 属于 activity_main，需通过 Activity 根视图查找
-        val activeLabel = findViewById<TextView>(if (idx == 0) R.id.tabAppsLabel else R.id.tabLogLabel)
-        val inactiveLabel = findViewById<TextView>(if (idx == 0) R.id.tabLogLabel else R.id.tabAppsLabel)
-        val activeInd = findViewById<View>(if (idx == 0) R.id.tabAppsIndicator else R.id.tabLogIndicator)
-        val inactiveInd = findViewById<View>(if (idx == 0) R.id.tabLogIndicator else R.id.tabAppsIndicator)
+        currentPage = idx
+        val pages = listOf(pageApps, pageTemplates, pageLog)
+        pages.forEachIndexed { i, v -> v.visibility = if (i == idx) View.VISIBLE else View.GONE }
 
-        activeLabel.setTextColor(ContextCompat.getColor(this, R.color.teal_primary))
-        activeLabel.typeface = android.graphics.Typeface.DEFAULT_BOLD
-        inactiveLabel.setTextColor(ContextCompat.getColor(this, R.color.on_surface_variant))
-        inactiveLabel.typeface = android.graphics.Typeface.DEFAULT
-        activeInd.visibility = View.VISIBLE
-        inactiveInd.visibility = View.INVISIBLE
+        val ids = listOf(
+            Triple(R.id.tabAppsLabel, R.id.tabAppsIndicator, R.id.tabApps),
+            Triple(R.id.tabTemplatesLabel, R.id.tabTemplatesIndicator, R.id.tabTemplates),
+            Triple(R.id.tabLogLabel, R.id.tabLogIndicator, R.id.tabLog)
+        )
+        ids.forEachIndexed { i, (labelId, indId, _) ->
+            val label = findViewById<TextView>(labelId)
+            val ind = findViewById<View>(indId)
+            label.setTextColor(ContextCompat.getColor(this, if (i == idx) R.color.teal_primary else R.color.on_surface_variant))
+            label.typeface = if (i == idx) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            ind.visibility = if (i == idx) View.VISIBLE else View.INVISIBLE
+        }
+
+        if (idx == 1) loadTemplates()
+    }
+
+    private fun loadTemplates() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val list = TemplateStore.list(this@MainActivity)
+            withContext(Dispatchers.Main) {
+                val adapter = templateAdapter
+                if (adapter == null) {
+                    templateAdapter = TemplateAdapter(
+                        list,
+                        onClick = { openTemplate(it) },
+                        onMenu = { tpl, anchor -> showTemplateMenu(tpl, anchor) }
+                    )
+                    rvTemplates.adapter = templateAdapter
+                } else {
+                    adapter.submitList(list)
+                }
+                tvTemplatesEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                rvTemplates.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+            }
+        }
+    }
+
+    private fun openTemplate(t: IconTemplate) {
+        startActivity(Intent(this, TemplateDetailActivity::class.java).apply {
+            putExtra(TemplateDetailActivity.EXTRA_TEMPLATE_ID, t.id)
+        })
+    }
+
+    private fun showTemplateMenu(t: IconTemplate, anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, R.string.template_rename)
+            menu.add(0, 2, 1, R.string.template_delete)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> TemplateDialogs.promptName(
+                        this@MainActivity, getString(R.string.template_rename), t.name
+                    ) { name ->
+                        TemplateStore.rename(this@MainActivity, t.id, name)
+                        loadTemplates()
+                    }
+                    2 -> TemplateDialogs.confirm(
+                        this@MainActivity,
+                        getString(R.string.template_delete),
+                        getString(R.string.template_delete_confirm, t.name)
+                    ) {
+                        TemplateStore.delete(this@MainActivity, t.id)
+                        loadTemplates()
+                    }
+                }
+                true
+            }
+            show()
+        }
     }
 
     private fun loadIconPacks() {
@@ -504,12 +578,16 @@ class MainActivity : AppCompatActivity() {
 
     data class AppEntry(val pkg: String, val label: String, val component: String, val icon: Drawable, val isSystem: Boolean)
 
-    inner class AppAdapter(private var items: List<AppEntry>, val onClick: (AppEntry) -> Unit) : RecyclerView.Adapter<AppAdapter.VH>() {
+    inner class AppAdapter(
+        private var items: List<AppEntry>,
+        val onClick: (AppEntry) -> Unit
+    ) : RecyclerView.Adapter<AppAdapter.VH>() {
         fun submitList(new: List<AppEntry>) { items = new; notifyDataSetChanged() }
         override fun onCreateViewHolder(parent: ViewGroup, vt: Int) = VH(LayoutInflater.from(parent.context).inflate(R.layout.item_app_entry, parent, false))
         override fun onBindViewHolder(h: VH, pos: Int) = h.bind(items[pos])
         override fun getItemCount() = items.size
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            private val cb = v.findViewById<CheckBox>(R.id.cbSelect)
             private val iv = v.findViewById<ImageView>(R.id.ivIcon)
             private val tvL = v.findViewById<TextView>(R.id.tvLabel)
             private val tvP = v.findViewById<TextView>(R.id.tvPackage)
@@ -517,6 +595,12 @@ class MainActivity : AppCompatActivity() {
             fun bind(e: AppEntry) {
                 tvL.text = e.label; tvP.text = e.pkg; iv.setImageDrawable(e.icon)
                 btn.setOnClickListener { onClick(e) }
+                cb.setOnCheckedChangeListener(null)
+                cb.isChecked = e.pkg in selectedPackages
+                cb.setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedPackages.add(e.pkg) else selectedPackages.remove(e.pkg)
+                }
+                itemView.setOnClickListener { onClick(e) }
             }
         }
     }
