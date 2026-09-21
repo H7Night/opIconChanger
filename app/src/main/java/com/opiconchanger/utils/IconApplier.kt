@@ -53,6 +53,27 @@ object IconApplier {
         }
     }
 
+    suspend fun deleteIcon(context: Context, pkg: String): Boolean = withContext(Dispatchers.IO) {
+        val cfg = File(IconPaths.UX_ICON_DIR, "$pkg.cfg")
+        val png = File(IconPaths.UX_ICON_DIR, "$pkg.png")
+        val cfgOk = if (cfg.exists()) cfg.delete() else true
+        val pngOk = if (png.exists()) png.delete() else true
+        if (cfgOk && pngOk && !cfg.exists() && !png.exists()) {
+            LogUtils.i("IconApplier 直接删除成功: $pkg")
+            return@withContext true
+        }
+        try {
+            val r = RootExec.exec(
+                "rm -f ${RootExec.shQuote(cfg.absolutePath)} ${RootExec.shQuote(png.absolutePath)}"
+            )
+            LogUtils.i(if (r.succeeded) "IconApplier su 删除成功: $pkg" else "IconApplier su 删除失败: $pkg")
+            r.succeeded
+        } catch (e: Exception) {
+            LogUtils.w("IconApplier deleteIcon 异常: ${e.message}")
+            false
+        }
+    }
+
     private fun writeFiles(context: Context, targetPkg: String, bitmap: Bitmap, cfgText: String): Boolean {
         val pngTarget = File(IconPaths.UX_ICON_DIR, "$targetPkg.png")
         val cfgTarget = File(IconPaths.UX_ICON_DIR, "$targetPkg.cfg")
